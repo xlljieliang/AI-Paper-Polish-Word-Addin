@@ -3,7 +3,6 @@ using System.Windows.Forms;
 using AIPolishCOMAddin.Infrastructure;
 using AIPolishCOMAddin.UI;
 using AIPolishCOMAddin.Utils;
-using Office = Microsoft.Office.Core;
 
 namespace AIPolishCOMAddin
 {
@@ -13,7 +12,7 @@ namespace AIPolishCOMAddin
     /// </summary>
     public partial class ThisAddIn
     {
-        private Office.CommandBarButton _contextMenuItem;
+        private dynamic _contextMenuItem;
 
         private void ThisAddIn_Startup(object sender, System.EventArgs e)
         {
@@ -55,6 +54,7 @@ namespace AIPolishCOMAddin
 
         /// <summary>
         /// 注册 Word 右键菜单 — "AI润色选中段落"
+        /// 使用 dynamic 避免对 Microsoft.Office.Core 的编译时依赖
         /// </summary>
         private void RegisterContextMenu()
         {
@@ -64,17 +64,21 @@ namespace AIPolishCOMAddin
                 if (popupMenu == null) return;
 
                 // 防止重复注册
-                foreach (Office.CommandBarControl ctrl in popupMenu.Controls)
+                foreach (var ctrl in popupMenu.Controls)
                 {
-                    if (ctrl.Tag == "AIPolishAddin")
+                    try
                     {
-                        _contextMenuItem = ctrl as Office.CommandBarButton;
-                        return;
+                        if ((string)ctrl.Tag == "AIPolishAddin")
+                        {
+                            _contextMenuItem = ctrl;
+                            return;
+                        }
                     }
+                    catch { }
                 }
 
-                _contextMenuItem = (Office.CommandBarButton)popupMenu.Controls.Add(
-                    Type: Office.MsoControlType.msoControlButton,
+                _contextMenuItem = popupMenu.Controls.Add(
+                    Type: 1, // msoControlButton
                     Before: popupMenu.Controls.Count + 1,
                     Temporary: true);
 
@@ -83,8 +87,8 @@ namespace AIPolishCOMAddin
                     _contextMenuItem.Caption = "AI润色选中段落";
                     _contextMenuItem.Tag = "AIPolishAddin";
                     _contextMenuItem.FaceId = 378;
-                    _contextMenuItem.Style = Office.MsoButtonStyle.msoButtonIconAndCaption;
-                    _contextMenuItem.Click += ContextMenuClick;
+                    _contextMenuItem.Style = 3; // msoButtonIconAndCaption
+                    _contextMenuItem.Click += new EventHandler(ContextMenuClick);
                 }
             }
             catch (Exception ex)
@@ -112,7 +116,7 @@ namespace AIPolishCOMAddin
         /// <summary>
         /// 右键菜单点击：获取选中文本来填充主面板
         /// </summary>
-        private void ContextMenuClick(Office.CommandBarButton cmdBarbutton, ref bool cancelDefault)
+        private void ContextMenuClick(object cmdBarbutton, EventArgs e)
         {
             try
             {

@@ -16,56 +16,64 @@ jobs:
       - name: Install VSTO workload (Office/SharePoint)
         shell: pwsh
         run: |
-          # Locate vs_installer
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
           if (-not (Test-Path $installer)) {
             $installer = "$env:ProgramFiles\Microsoft Visual Studio\Installer\vs_installer.exe"
           }
 
           if (Test-Path $installer) {
-            # Find VS installation path using vswhere
             $vswhere = Join-Path (Split-Path $installer) "vswhere.exe"
-            if (Test-Path $vswhere) {
-              $vsPath = & $vswhere -latest -property installationPath
-              Write-Host "VS installed at: $vsPath"
-            } else {
-              $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-            }
+            $vsPath = if (Test-Path $vswhere) { & $vswhere -latest -property installationPath } else { "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" }
+            Write-Host "VS installed at: $vsPath"
 
-            # Check if VSTO targets already exist
+            # Check VSTO targets
             $vstoDir = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio"
             $target = Get-ChildItem $vstoDir -Recurse -Filter "Microsoft.VisualStudio.Tools.Office.targets" -ErrorAction SilentlyContinue
-            if ($target) {
-              Write-Host "VSTO already installed: $($target[0].FullName)"
-            } else {
-              Write-Host "VSTO not found. Installing Office workload (this may take ~5 minutes)..."
-              $argString = 'modify --installPath "' + $vsPath.TrimEnd('\') + '" --add Microsoft.VisualStudio.Workload.Office --includeRecommended --quiet --wait --norestart'
-              Write-Host "Running: $installer $argString"
-              $proc = Start-Process -FilePath $installer -ArgumentList $argString -Wait -NoNewWindow -PassThru
-              Write-Host "Exit code: $($proc.ExitCode) (0=success, 3010=success+reboot)"
-              if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-                throw "Failed to install VSTO workload (exit code: $($proc.ExitCode))"
+            $needComponents = @()
+            if (-not $target) {
+              $needComponents += "Microsoft.VisualStudio.Workload.Office"
+            }
+            # Check if Office.Core PIA is available (for CommandBarButton)
+            $officeCorePaths = @(
+              Join-Path $vsPath "Common7\IDE\PublicAssemblies",
+              "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0",
+              "$env:ProgramFiles\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0"
+            )
+            $foundOfficeCore = $false
+            foreach ($p in $officeCorePaths) {
+              if (Test-Path $p) {
+                $dll = Get-ChildItem $p -Filter "office.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($dll) { $foundOfficeCore = $true; Write-Host "Office.Core found at: $($dll.FullName)"; break }
               }
+            }
+            if (-not $foundOfficeCore) {
+              $needComponents += "Microsoft.VisualStudio.Component.TeamOffice"
+            }
+
+            if ($needComponents.Count -gt 0) {
+              $components = ($needComponents | ForEach-Object { "--add $_ --includeRecommended" }) -join " "
+              $argString = "modify --installPath `"$($vsPath.TrimEnd('\'))`" $components --quiet --wait --norestart"
+              Write-Host "Installing: $components"
+              $proc = Start-Process -FilePath $installer -ArgumentList $argString -Wait -NoNewWindow -PassThru
+              Write-Host "Exit code: $($proc.ExitCode)"
+              if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+                throw "VS installer failed (exit code: $($proc.ExitCode))"
+              }
+            } else {
+              Write-Host "All components already installed."
             }
           } else {
             Write-Host "No VS found. Downloading VS Build Tools with Office workload..."
             Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
-            $argString = '--quiet --wait --norestart --installPath "C:\VS_BT" --add Microsoft.VisualStudio.Workload.Office --add Microsoft.VisualStudio.Workload.ManagedDesktop --includeRecommended'
-            Write-Host "Running installer..."
+            $argString = '--quiet --wait --norestart --installPath "C:\VS_BT" --add Microsoft.VisualStudio.Workload.Office --includeRecommended'
             $proc = Start-Process -FilePath "vs_buildtools.exe" -ArgumentList $argString -Wait -NoNewWindow -PassThru
-            Write-Host "Exit code: $($proc.ExitCode) (0=success)"
-            if ($proc.ExitCode -ne 0) {
-              throw "VS Build Tools install failed (exit code: $($proc.ExitCode))"
-            }
-            # Add installed MSBuild to PATH for subsequent steps
+            if ($proc.ExitCode -ne 0) { throw "Install failed (exit code: $($proc.ExitCode))" }
             $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
           }
 
       - name: Fix VSTO targets path (junction for VS2026+)
         shell: pwsh
         run: |
-          # VS2026+ places VSTO targets in OfficeTools\ instead of Office\
-          # Create a directory junction so standard csproj import works
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $v18 = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v18.0"
           $officeDir = Join-Path $v18 "Office"
@@ -77,35 +85,6 @@ jobs:
             Write-Host "Office directory already exists: $officeDir"
           } else {
             Write-Host "Neither Office nor OfficeTools found at $v18"
-            if (Test-Path $v18) {
-              Get-ChildItem $v18 | ForEach-Object { Write-Host "  $($_.Name)" }
-            }
-          }
-
-      - name: Diagnose VSTO references
-        shell: pwsh
-        run: |
-          Write-Host "=== Searching for Office.Core (office.dll) ==="
-          $paths = @(
-            "$env:ProgramFiles\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PublicAssemblies",
-            "$env:ProgramFiles\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PrivateAssemblies",
-            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0",
-            "$env:ProgramFiles\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0",
-            "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\VSTO40\v4.0",
-            "$env:ProgramFiles\Reference Assemblies\Microsoft\VSTO40\v4.0",
-            "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8",
-            "$env:ProgramFiles\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8",
-            "C:\Windows\Microsoft.NET\assembly\GAC_MSIL"
-          )
-          foreach ($p in $paths) {
-            if (Test-Path $p) {
-              Write-Host "Contents of $p:"
-              Get-ChildItem $p -Recurse -Filter "office.dll" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND: $($_.FullName)" }
-              Get-ChildItem $p -Recurse -Filter "Microsoft.Office.Core*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND: $($_.FullName)" }
-              Get-ChildItem $p -Recurse -Filter "Microsoft.Office.Tools.Common*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND VSTO: $($_.FullName)" }
-            } else {
-              Write-Host "NOT FOUND: $p"
-            }
           }
 
       - name: Build VSTO project
