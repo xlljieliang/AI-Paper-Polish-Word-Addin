@@ -29,46 +29,36 @@ jobs:
               $vsPath = & $vswhere -latest -property installationPath
               Write-Host "VS installed at: $vsPath"
             } else {
-              $vsPath = "C:\Program Files\Microsoft Visual Studio\18\Enterprise"
+              $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
             }
 
             # Check if VSTO targets already exist
-            $targetsPath = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v18.0\Office\Microsoft.VisualStudio.Tools.Office.targets"
-            if (Test-Path $targetsPath) {
-              Write-Host "VSTO targets already installed at: $targetsPath"
+            $vstoDir = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio"
+            $target = Get-ChildItem $vstoDir -Recurse -Filter "Microsoft.VisualStudio.Tools.Office.targets" -ErrorAction SilentlyContinue
+            if ($target) {
+              Write-Host "VSTO already installed: $($target[0].FullName)"
             } else {
-              Write-Host "VSTO targets not found. Installing Office workload..."
-              $proc = Start-Process -FilePath $installer -ArgumentList @(
-                "modify",
-                "--installPath", $vsPath,
-                "--add", "Microsoft.VisualStudio.Workload.Office",
-                "--includeRecommended",
-                "--quiet",
-                "--wait",
-                "--norestart"
-              ) -Wait -NoNewWindow -PassThru
-              if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-                Write-Host "VSTO workload installed successfully"
-              } else {
-                Write-Host "Installer exit code: $($proc.ExitCode)"
-                throw "Failed to install VSTO workload"
+              Write-Host "VSTO not found. Installing Office workload (this may take ~5 minutes)..."
+              $argString = 'modify --installPath "' + $vsPath.TrimEnd('\') + '" --add Microsoft.VisualStudio.Workload.Office --includeRecommended --quiet --wait --norestart'
+              Write-Host "Running: $installer $argString"
+              $proc = Start-Process -FilePath $installer -ArgumentList $argString -Wait -NoNewWindow -PassThru
+              Write-Host "Exit code: $($proc.ExitCode) (0=success, 3010=success+reboot)"
+              if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+                throw "Failed to install VSTO workload (exit code: $($proc.ExitCode))"
               }
             }
           } else {
-            Write-Host "No VS installer found. Installing VS Build Tools with Office workload..."
+            Write-Host "No VS found. Downloading VS Build Tools with Office workload..."
             Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
-            $proc = Start-Process -FilePath "vs_buildtools.exe" -ArgumentList @(
-              "--quiet", "--wait", "--norestart",
-              "--installPath", "C:\VS_BT",
-              "--add", "Microsoft.VisualStudio.Workload.Office",
-              "--add", "Microsoft.VisualStudio.Workload.ManagedDesktop",
-              "--includeRecommended"
-            ) -Wait -NoNewWindow -PassThru
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-              Write-Host "VS Build Tools installed successfully"
-            } else {
-              throw "VS Build Tools install failed with code $($proc.ExitCode)"
+            $argString = '--quiet --wait --norestart --installPath "C:\VS_BT" --add Microsoft.VisualStudio.Workload.Office --add Microsoft.VisualStudio.Workload.ManagedDesktop --includeRecommended'
+            Write-Host "Running installer..."
+            $proc = Start-Process -FilePath "vs_buildtools.exe" -ArgumentList $argString -Wait -NoNewWindow -PassThru
+            Write-Host "Exit code: $($proc.ExitCode) (0=success)"
+            if ($proc.ExitCode -ne 0) {
+              throw "VS Build Tools install failed (exit code: $($proc.ExitCode))"
             }
+            # Add installed MSBuild to PATH for subsequent steps
+            $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
           }
 
       - name: Build VSTO project
