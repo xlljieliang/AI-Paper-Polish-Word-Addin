@@ -123,7 +123,7 @@
        Runs AFTER ResolveAssemblyReferences but BEFORE CoreCompile (CSC).
        This bypasses MSBuild's reference resolution which fails on CI due to
        missing/incomplete AssemblyFolders.config (MSBuild issue #7617). -->
-  <Target Name="ForceVSTORefs" BeforeTargets="CoreCompile">
+  <Target Name="ForceVSTORefs" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
     <ItemGroup>
       <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.Office.Tools.Common.v4.0.Utilities.dll">
         <Private>False</Private>
@@ -138,6 +138,7 @@
         <FusionName>Microsoft.VisualStudio.Tools.Applications.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</FusionName>
       </ReferencePath>
     </ItemGroup>
-    <Message Importance="high" Text="[VSTO-FORCE] Injected VSTO refs into ReferencePath for CSC" />
+    <Message Importance="high" Text="[VSTO-FORCE] Injected VSTO refs. ReferencePath now has @(ReferencePath->Count()) items:" />
+    <Message Importance="high" Text="  %(ReferencePath.Identity)" />
   </Target>
 </Project>

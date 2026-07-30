@@ -114,6 +114,27 @@ jobs:
           }
           Write-Host "All VSTO reference assemblies staged to lib\ successfully."
 
+      - name: Verify staged DLLs
+        shell: pwsh
+        run: |
+          $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
+          foreach ($asm in $needed) {
+            $dll = Join-Path lib "$asm.dll"
+            Write-Host "--- $dll ---"
+            if (-not (Test-Path $dll)) { throw "MISSING: $dll" }
+            Write-Host "  Size: $((Get-Item $dll).Length) bytes"
+            try {
+              $a = [System.Reflection.Assembly]::LoadFrom((Resolve-Path $dll))
+              Write-Host "  FullName: $($a.FullName)"
+              Write-Host "  Location: $($a.Location)"
+              $types = $a.GetExportedTypes() | ForEach-Object { $_.FullName }
+              Write-Host "  Exported types ($($types.Count)):"
+              $types | ForEach-Object { Write-Host "    $_" }
+            } catch {
+              Write-Host "  Load error: $_"
+            }
+          }
+
       - name: Build VSTO project
         shell: pwsh
         run: |
@@ -123,7 +144,7 @@ jobs:
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $vstoRefPath = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
           Write-Host "VSTO ReferencePath: $vstoRefPath"
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /v:m
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /v:n
           if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
           Write-Host "BUILD SUCCEEDED!"
 
