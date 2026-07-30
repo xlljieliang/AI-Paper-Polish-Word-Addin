@@ -145,19 +145,34 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Starting build..."
-          # Resolve VS reference assemblies path for VSTO (workaround for MSBuild bug #7617:
-          # AssemblyFolders.config may be missing or not include VSTO paths on build server)
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           if (-not $vsPath) { throw "vswhere failed to detect VS installation path" }
           $vstoRefPath = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
           $libPath = Join-Path $PWD.Path "lib"
           $combinedRefPath = "$vstoRefPath;$libPath"
           Write-Host "ReferencePath: $combinedRefPath"
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$combinedRefPath" /p:UseSharedCompilation=false /v:n
-          if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
+          Write-Host "--- lib contents ---"
+          Get-ChildItem lib | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+          Write-Host "--- Starting MSBuild with detailed logging ---"
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$combinedRefPath" /p:UseSharedCompilation=false /v:d 2>&1 | Tee-Object -FilePath build.log
+          Write-Host "--- Build exit code: $LASTEXITCODE ---"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "--- Last 100 lines of build log ---"
+            Get-Content build.log -Tail 100
+            throw "Build failed (exit $LASTEXITCODE)"
+          }
           Write-Host "BUILD SUCCEEDED!"
 
+      - name: Upload build log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+
       - name: Package artifacts
+        if: success()
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path publish
