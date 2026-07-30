@@ -108,8 +108,12 @@
   <ItemGroup>
     <None Include="AIPolishCOMAddin_TemporaryKey.pfx" />
   </ItemGroup>
-  <!-- VSTO targets first to set up VSTO reference paths,
-       then CSharp targets as fallback for Build/Build target -->
+  <!-- Add VSTO reference assembly path for assembly resolution -->
+  <PropertyGroup>
+    <VSTORefPath Condition="Exists('$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0')">$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0</VSTORefPath>
+  </PropertyGroup>
+  <!-- Load VSTO targets for Office type resolution -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
+  <!-- Load CSharp targets for standard Build target -->
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
 </Project>
