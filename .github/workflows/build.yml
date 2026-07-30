@@ -92,57 +92,31 @@ jobs:
             Write-Host "MSI extracted to $extractDir"
           }
 
-      - name: Diagnostic - find VSTO DLL locations
-        shell: pwsh
-        run: |
-          Write-Host "=== Searching for VSTO DLLs everywhere ==="
-          # 1) GAC_MSIL
-          Write-Host "--- GAC_MSIL dirs matching *Office.Tools* ---"
-          Get-ChildItem "C:\Windows\Microsoft.NET\assembly\GAC_MSIL" -Directory -Filter "Microsoft.Office.Tools*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-          # 2) Entire GAC tree
-          Write-Host "--- Searching entire GAC tree for VSTO DLLs ---"
-          Get-ChildItem "C:\Windows\Microsoft.NET\assembly" -Filter "Microsoft.Office.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-          Get-ChildItem "C:\Windows\Microsoft.NET\assembly" -Filter "Microsoft.VisualStudio.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-          # 3) Program Files VSTO
-          Write-Host "--- Program Files VSTO ---"
-          Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter "*VSTO*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-          Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio Tools for Office Runtime" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
-          # 4) VS install dir
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Write-Host "--- VS dir VSTO DLLs ---"
-          Get-ChildItem $vsPath -Filter "Microsoft.Office.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object { Write-Host $_.FullName }
-          Write-Host "=== Diagnostic complete ==="
-
       - name: Stage VSTO reference assemblies
         shell: pwsh
         run: |
           $refDir = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\VSTO40\v4.0"
           New-Item -ItemType Directory -Force -Path $refDir | Out-Null
-          $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
-          # Search paths in priority order
-          $searchRoots = @(
-            "C:\Windows\Microsoft.NET\assembly",
-            "$env:RUNNER_TEMP\vsto_extract",
-            "${env:ProgramFiles(x86)}\Microsoft Visual Studio Tools for Office Runtime",
-            "${env:ProgramFiles(x86)}"
-          )
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          if ($vsPath) { $searchRoots += $vsPath }
+          # DLLs are in VS Common7\IDE\ReferenceAssemblies\v4.0 (installed by Office workload)
+          $vsRefDir = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
+          $gacRoot = "C:\Windows\Microsoft.NET\assembly"
+          Write-Host "VS ref dir: $vsRefDir"
+          Write-Host "GAC root: $gacRoot"
+          $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
           foreach ($asm in $needed) {
             $dest = Join-Path $refDir "$asm.dll"
             if (Test-Path $dest) { Write-Host "$asm OK"; continue }
-            $found = $false
-            foreach ($root in $searchRoots) {
-              if (-not (Test-Path $root)) { continue }
-              $dlls = Get-ChildItem $root -Filter "$asm.dll" -Recurse -Depth 8 -ErrorAction SilentlyContinue
-              if ($dlls) {
-                Copy-Item $dlls[0].FullName $dest -Force
-                Write-Host "$asm from $root -> $($dlls[0].FullName)"
-                $found = $true
-                break
-              }
-            }
-            if (-not $found) { throw "FATAL: $asm.dll not found anywhere!" }
+            # 1) VS Common7\IDE\ReferenceAssemblies\v4.0
+            $path = Join-Path $vsRefDir "$asm.dll"
+            if (Test-Path $path) { Copy-Item $path $dest -Force; Write-Host "$asm from VS ref dir"; continue }
+            # 2) GAC
+            $dlls = Get-ChildItem $gacRoot -Filter "$asm.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue
+            if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm from GAC"; continue }
+            # 3) MSI extract fallback
+            $dlls = Get-ChildItem "$env:RUNNER_TEMP\vsto_extract" -Filter "$asm.dll" -Recurse -ErrorAction SilentlyContinue
+            if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm from MSI extract"; continue }
+            throw "FATAL: $asm.dll not found!"
           }
           Write-Host "All VSTO reference assemblies staged successfully."
 
