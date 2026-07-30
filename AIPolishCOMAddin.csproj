@@ -47,15 +47,15 @@
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
     <Reference Include="Microsoft.Office.Tools.Common.v4.0.Utilities">
-      <HintPath>lib\Microsoft.Office.Tools.Common.v4.0.Utilities.dll</HintPath>
+      <HintPath>$(MSBuildProjectDirectory)\lib\Microsoft.Office.Tools.Common.v4.0.Utilities.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.Office.Tools.v4.0.Framework">
-      <HintPath>lib\Microsoft.Office.Tools.v4.0.Framework.dll</HintPath>
+      <HintPath>$(MSBuildProjectDirectory)\lib\Microsoft.Office.Tools.v4.0.Framework.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.Tools.Applications.Runtime">
-      <HintPath>lib\Microsoft.VisualStudio.Tools.Applications.Runtime.dll</HintPath>
+      <HintPath>$(MSBuildProjectDirectory)\lib\Microsoft.VisualStudio.Tools.Applications.Runtime.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
@@ -119,4 +119,8 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
   <!-- Load VSTO targets LAST (important: VSTO targets must come after CSharp targets to extend the build pipeline correctly) -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
+  <!-- Ensure MSBuild searches lib\ for VSTO reference assemblies (after VSTO targets import, as they may modify search paths) -->
+  <PropertyGroup>
+    <ReferencePath>$(MSBuildProjectDirectory)\lib\;$(ReferencePath)</ReferencePath>
+  </PropertyGroup>
 </Project>
