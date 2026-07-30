@@ -40,16 +40,19 @@
     <AssemblyOriginatorKeyFile>AIPolishCOMAddin_TemporaryKey.pfx</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.Office.Interop.Word, Version=15.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c">
+    <Reference Include="Microsoft.Office.Core">
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
-    <Reference Include="Microsoft.Office.Tools.Common.v4.0.Utilities, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <Reference Include="Microsoft.Office.Interop.Word">
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="Microsoft.Office.Tools.Common.v4.0.Utilities">
       <Private>False</Private>
     </Reference>
-    <Reference Include="Microsoft.Office.Tools.v4.0.Framework, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <Reference Include="Microsoft.Office.Tools.v4.0.Framework">
       <Private>False</Private>
     </Reference>
-    <Reference Include="Microsoft.VisualStudio.Tools.Applications.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <Reference Include="Microsoft.VisualStudio.Tools.Applications.Runtime">
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
@@ -105,8 +108,8 @@
   <ItemGroup>
     <None Include="AIPolishCOMAddin_TemporaryKey.pfx" />
   </ItemGroup>
-  <!-- VS2026 VSTO targets at OfficeTools\ may have broken import chains,
-       so import CSharp targets explicitly to ensure Build/Build target exists -->
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
+  <!-- VSTO targets first to set up VSTO reference paths,
+       then CSharp targets as fallback for Build/Build target -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
 </Project>

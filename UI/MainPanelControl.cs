@@ -16,7 +16,7 @@ namespace AIPolishCOMAddin.UI
     /// </summary>
     public partial class MainPanelControl : UserControl
     {
-        private Application _wordApp;
+        private Microsoft.Office.Interop.Word.Application _wordApp;
         private PolishEngine _engine;
         private PolishResult _currentResult;
         private CancellationTokenSource _cts;
@@ -34,7 +34,7 @@ namespace AIPolishCOMAddin.UI
         /// <summary>
         /// 注入 Word Application 引用
         /// </summary>
-        public void SetWordApplication(Application wordApp)
+        public void SetWordApplication(Microsoft.Office.Interop.Word.Application wordApp)
         {
             _wordApp = wordApp;
         }
