@@ -119,17 +119,25 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
   <!-- Load VSTO targets LAST (important: VSTO targets must come after CSharp targets to extend the build pipeline correctly) -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
-  <!-- Force MSBuild to search lib\ for VSTO reference assemblies.
-       Runs right before ResolveAssemblyReferences so VSTO targets cannot override. -->
-  <Target Name="InjectVSTORefPath" BeforeTargets="ResolveAssemblyReferences">
-    <PropertyGroup>
-      <AssemblySearchPaths>$(AssemblySearchPaths);$(MSBuildProjectDirectory)\lib</AssemblySearchPaths>
-    </PropertyGroup>
-    <Message Importance="high" Text="[VSTO-FIX] AssemblySearchPaths = $(AssemblySearchPaths)" />
-    <Message Importance="high" Text="[VSTO-FIX] lib dir contents:" />
+  <!-- Force VSTO reference assemblies into C# compiler input.
+       Runs AFTER ResolveAssemblyReferences but BEFORE CoreCompile (CSC).
+       This bypasses MSBuild's reference resolution which fails on CI due to
+       missing/incomplete AssemblyFolders.config (MSBuild issue #7617). -->
+  <Target Name="ForceVSTORefs" BeforeTargets="CoreCompile">
     <ItemGroup>
-      <_LibFiles Include="$(MSBuildProjectDirectory)\lib\*.dll" />
+      <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.Office.Tools.Common.v4.0.Utilities.dll">
+        <Private>False</Private>
+        <FusionName>Microsoft.Office.Tools.Common.v4.0.Utilities, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</FusionName>
+      </ReferencePath>
+      <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.Office.Tools.v4.0.Framework.dll">
+        <Private>False</Private>
+        <FusionName>Microsoft.Office.Tools.v4.0.Framework, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</FusionName>
+      </ReferencePath>
+      <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.VisualStudio.Tools.Applications.Runtime.dll">
+        <Private>False</Private>
+        <FusionName>Microsoft.VisualStudio.Tools.Applications.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</FusionName>
+      </ReferencePath>
     </ItemGroup>
-    <Message Importance="high" Text="  %(_LibFiles.FullPath)" />
+    <Message Importance="high" Text="[VSTO-FORCE] Injected VSTO refs into ReferencePath for CSC" />
   </Target>
 </Project>
