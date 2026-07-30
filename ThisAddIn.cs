@@ -176,10 +176,32 @@ namespace AIPolishCOMAddin
 
         #region VSTO generated code
 
+        /// <summary>
+        /// VSTO loader calls this method at add-in initialization.
+        /// Uses reflection to hook Startup/Shutdown events from the VSTO base class,
+        /// avoiding compile-time dependency on VSTO runtime assemblies.
+        /// </summary>
         private void InternalStartup()
         {
-            this.Startup += new System.EventHandler(ThisAddIn_Startup);
-            this.Shutdown += new System.EventHandler(ThisAddIn_Shutdown);
+            var baseType = GetType().BaseType;
+            if (baseType != null)
+            {
+                var startupEvent = baseType.GetEvent("Startup",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (startupEvent != null)
+                {
+                    var handler = new System.EventHandler(ThisAddIn_Startup);
+                    startupEvent.AddEventHandler(this, handler);
+                }
+
+                var shutdownEvent = baseType.GetEvent("Shutdown",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (shutdownEvent != null)
+                {
+                    var handler = new System.EventHandler(ThisAddIn_Shutdown);
+                    shutdownEvent.AddEventHandler(this, handler);
+                }
+            }
         }
 
         #endregion
