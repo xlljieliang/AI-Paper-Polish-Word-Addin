@@ -61,6 +61,27 @@ jobs:
             $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
           }
 
+      - name: Fix VSTO targets path (junction for VS2026+)
+        shell: pwsh
+        run: |
+          # VS2026+ places VSTO targets in OfficeTools\ instead of Office\
+          # Create a directory junction so standard csproj import works
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $v18 = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v18.0"
+          $officeDir = Join-Path $v18 "Office"
+          $officeToolsDir = Join-Path $v18 "OfficeTools"
+          if ((Test-Path $officeToolsDir) -and -not (Test-Path $officeDir)) {
+            Write-Host "Creating junction: $officeDir -> $officeToolsDir"
+            cmd.exe /c "mklink /J `"$officeDir`" `"$officeToolsDir`""
+          } elseif (Test-Path $officeDir) {
+            Write-Host "Office directory already exists: $officeDir"
+          } else {
+            Write-Host "Neither Office nor OfficeTools found at $v18"
+            if (Test-Path $v18) {
+              Get-ChildItem $v18 | ForEach-Object { Write-Host "  $($_.Name)" }
+            }
+          }
+
       - name: Build VSTO project
         shell: pwsh
         run: |

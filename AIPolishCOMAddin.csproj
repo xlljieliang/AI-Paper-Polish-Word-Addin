@@ -105,10 +105,5 @@
   <ItemGroup>
     <None Include="AIPolishCOMAddin_TemporaryKey.pfx" />
   </ItemGroup>
-  <!-- 兼容 VS 2022 (Office\) 和 VS 2026+ (OfficeTools\) 的 VSTO targets 路径 -->
-  <PropertyGroup>
-    <VSTOTargetsPath Condition="Exists('$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets')">$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets</VSTOTargetsPath>
-    <VSTOTargetsPath Condition="Exists('$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\OfficeTools\Microsoft.VisualStudio.Tools.Office.targets')">$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\OfficeTools\Microsoft.VisualStudio.Tools.Office.targets</VSTOTargetsPath>
-  </PropertyGroup>
-  <Import Project="$(VSTOTargetsPath)" Condition="'$(VSTOTargetsPath)' != ''" />
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
 </Project>
