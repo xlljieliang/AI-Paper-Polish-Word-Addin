@@ -159,7 +159,7 @@ jobs:
           Write-Host "--- lib contents ---"
           Get-ChildItem lib | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
           Write-Host "--- Starting MSBuild with detailed logging ---"
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /p:UseSharedCompilation=false /v:d 2>&1 | Tee-Object -FilePath build.log
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false /p:SignManifests=false "/p:ReferencePath=$vstoRefPath" /p:UseSharedCompilation=false /v:d 2>&1 | Tee-Object -FilePath build.log
           Write-Host "--- Build exit code: $LASTEXITCODE ---"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "--- Last 100 lines of build log ---"
