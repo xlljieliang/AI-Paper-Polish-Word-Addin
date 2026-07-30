@@ -13,85 +13,63 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
-      - name: Check VSTO targets
-        id: check_vsto
+      - name: Install VSTO workload (Office/SharePoint)
         shell: pwsh
         run: |
-          $targetName = "Microsoft.VisualStudio.Tools.Office.targets"
-          $paths = @(
-            "$env:ProgramFiles"
-            "${env:ProgramFiles(x86)}"
-          )
-          $found = $false
-          foreach ($p in $paths) {
-            $files = Get-ChildItem $p -Recurse -Filter $targetName -ErrorAction SilentlyContinue
-            if ($files) {
-              Write-Host "Found: $($files[0].FullName)"
-              $found = $true
-            }
-          }
-          if ($found) {
-            "vsto_installed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          } else {
-            "vsto_installed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            Write-Host "VSTO targets missing - will install Office workload"
+          # Locate vs_installer
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          if (-not (Test-Path $installer)) {
+            $installer = "$env:ProgramFiles\Microsoft Visual Studio\Installer\vs_installer.exe"
           }
 
-      - name: Install VSTO (Office/SharePoint workload)
-        if: steps.check_vsto.outputs.vsto_installed == 'false'
-        shell: pwsh
-        run: |
-          Write-Host "Locating VS installer..."
-          $installer = $null
-          $candidates = @(
-            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-            "$env:ProgramFiles\Microsoft Visual Studio\Installer\vs_installer.exe"
-          )
-          foreach ($c in $candidates) {
-            if (Test-Path $c) { $installer = $c; break }
-          }
-          if (-not $installer) {
-            Write-Host "Downloading VS Build Tools..."
-            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
-            $installer = (Get-Item "vs_buildtools.exe").FullName
-            $args = @(
-              "--quiet", "--wait", "--norestart"
-              "--installPath", "C:\VS_BT"
-              "--add", "Microsoft.VisualStudio.Workload.Office"
-              "--add", "Microsoft.VisualStudio.Workload.ManagedDesktop"
-              "--includeRecommended"
-            )
-            Write-Host "Installing VS Build Tools with Office workload..."
-            Start-Process -FilePath $installer -ArgumentList $args -Wait -NoNewWindow
-            # Add to PATH for subsequent steps
-            $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
-          } else {
-            $installerDir = Split-Path $installer -Parent
-            $vswhere = Join-Path $installerDir "vswhere.exe"
+          if (Test-Path $installer) {
+            # Find VS installation path using vswhere
+            $vswhere = Join-Path (Split-Path $installer) "vswhere.exe"
             if (Test-Path $vswhere) {
               $vsPath = & $vswhere -latest -property installationPath
-              Write-Host "Found VS at: $vsPath"
+              Write-Host "VS installed at: $vsPath"
             } else {
-              $vsPath = Join-Path (Split-Path $installerDir -Parent) "Enterprise"
+              $vsPath = "C:\Program Files\Microsoft Visual Studio\18\Enterprise"
             }
-            $args = @(
-              "modify"
-              "--installPath", "`"$vsPath`""
-              "--add", "Microsoft.VisualStudio.Workload.Office"
-              "--includeRecommended"
-              "--quiet", "--wait", "--norestart"
-            )
-            Write-Host "Modifying VS installation to add Office workload..."
-            Start-Process -FilePath $installer -ArgumentList $args -Wait -NoNewWindow
-          }
-          Write-Host "Installation complete."
 
-      - name: Generate signing key
-        shell: pwsh
-        run: |
-          $cert = New-SelfSignedCertificate -Subject "CN=CI" -CertStoreLocation "Cert:\CurrentUser\My" -Type CodeSigning -KeyExportPolicy Exportable
-          $pwd = ConvertTo-SecureString "pwd" -Force -AsPlainText
-          Export-PfxCertificate -Cert $cert -FilePath "AIPolishCOMAddin_TemporaryKey.pfx" -Password $pwd
+            # Check if VSTO targets already exist
+            $targetsPath = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v18.0\Office\Microsoft.VisualStudio.Tools.Office.targets"
+            if (Test-Path $targetsPath) {
+              Write-Host "VSTO targets already installed at: $targetsPath"
+            } else {
+              Write-Host "VSTO targets not found. Installing Office workload..."
+              $proc = Start-Process -FilePath $installer -ArgumentList @(
+                "modify",
+                "--installPath", $vsPath,
+                "--add", "Microsoft.VisualStudio.Workload.Office",
+                "--includeRecommended",
+                "--quiet",
+                "--wait",
+                "--norestart"
+              ) -Wait -NoNewWindow -PassThru
+              if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+                Write-Host "VSTO workload installed successfully"
+              } else {
+                Write-Host "Installer exit code: $($proc.ExitCode)"
+                throw "Failed to install VSTO workload"
+              }
+            }
+          } else {
+            Write-Host "No VS installer found. Installing VS Build Tools with Office workload..."
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
+            $proc = Start-Process -FilePath "vs_buildtools.exe" -ArgumentList @(
+              "--quiet", "--wait", "--norestart",
+              "--installPath", "C:\VS_BT",
+              "--add", "Microsoft.VisualStudio.Workload.Office",
+              "--add", "Microsoft.VisualStudio.Workload.ManagedDesktop",
+              "--includeRecommended"
+            ) -Wait -NoNewWindow -PassThru
+            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+              Write-Host "VS Build Tools installed successfully"
+            } else {
+              throw "VS Build Tools install failed with code $($proc.ExitCode)"
+            }
+          }
 
       - name: Build VSTO project
         shell: pwsh
@@ -99,29 +77,19 @@ jobs:
           Write-Host "Starting build..."
           msbuild AIPolishCOMAddin.csproj /restore /t:Rebuild /p:Configuration=Release /p:Platform="Any CPU" /p:SignAssembly=false /v:m
           if ($LASTEXITCODE -ne 0) { throw "Build failed" }
-          Write-Host "Build succeeded!"
+          Write-Host "BUILD SUCCEEDED!"
 
       - name: Package artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path publish
           Copy-Item "bin\Release\AIPolishCOMAddin.dll" "publish\" -ErrorAction Stop
-          Copy-Item "install.bat" "publish\" -ErrorAction SilentlyContinue
-          Copy-Item "uninstall.bat" "publish\" -ErrorAction SilentlyContinue
-          Copy-Item "Register_Addin.reg" "publish\" -ErrorAction SilentlyContinue
-          Copy-Item "Unregister_Addin.reg" "publish\" -ErrorAction SilentlyContinue
-          Copy-Item "README.md" "publish\" -ErrorAction SilentlyContinue
+          Copy-Item "install.bat", "uninstall.bat", "Register_Addin.reg", "Unregister_Addin.reg", "README.md" "publish\"
           $h = Get-FileHash "publish\AIPolishCOMAddin.dll" -Algorithm SHA256
           Set-Content "publish\AIPolishCOMAddin.dll.sha256" $h.Hash
-          Write-Host "Package contents:"
-          Get-ChildItem publish | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
           name: AIPolishCOMAddin-Release
           path: publish/
           if-no-files-found: error
-
-      - name: Summary
-        shell: pwsh
-        run: 'Write-Output "Build complete. dll ready for download." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append'
