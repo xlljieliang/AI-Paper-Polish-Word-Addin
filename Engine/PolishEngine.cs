@@ -215,7 +215,7 @@ namespace AIPolishCOMAddin.Engine
                 processedCount++;
                 OnSentenceProgress?.Invoke(processedCount, totalSentences);
                 OnStatusUpdate?.Invoke($"正在处理第 {processedCount}/{totalSentences} 句...");
-                OnLogMessage?.Invoke($"  第 {processedCount}/{totalSentences} 句: \"{sentence[..Math.Min(30, sentence.Length)]}...\"");
+                OnLogMessage?.Invoke($"  第 {processedCount}/{totalSentences} 句: \"{sentence.Substring(0, Math.Min(30, sentence.Length))}...\"");
 
                 // 术语保护（逐句）
                 string processedSentence = sentence;

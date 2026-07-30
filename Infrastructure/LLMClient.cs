@@ -90,16 +90,22 @@ namespace AIPolishCOMAddin.Infrastructure
                     }
 
                     // 429 等待后重试
-                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < retryCount)
+                    if ((int)response.StatusCode == 429 && attempt < retryCount)
                     {
                         await Task.Delay(2000 * (attempt + 1), cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
-                catch (OperationCanceledException) { throw; }
-                catch (TaskCanceledException)
+                catch (OperationCanceledException ex)
                 {
-                    lastException = new LLMException("请求超时，请检查网络连接或增大超时时间。", "timeout", 0);
+                    if (ex is TaskCanceledException)
+                    {
+                        lastException = new LLMException("请求超时，请检查网络连接或增大超时时间。", "timeout", 0);
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
                 catch (HttpRequestException ex)
                 {
@@ -229,22 +235,22 @@ namespace AIPolishCOMAddin.Infrastructure
             {
                 var dict = _json.Deserialize<Dictionary<string, object>>(json);
 
-                var choices = dict.GetValueOrDefault("choices") as object[];
+                var choices = dict.GetValueOrDefault<object[]>("choices");
                 string content = "";
                 int inputTokens = 0, outputTokens = 0;
 
                 if (choices != null && choices.Length > 0)
                 {
                     var firstChoice = choices[0] as Dictionary<string, object>;
-                    var message = firstChoice?.GetValueOrDefault("message") as Dictionary<string, object>;
-                    content = message?.GetValueOrDefault("content") as string ?? "";
+                    var message = firstChoice?.GetValueOrDefault<Dictionary<string, object>>("message");
+                    content = message?.GetValueOrDefault<string>("content") ?? "";
                 }
 
-                var usage = dict.GetValueOrDefault("usage") as Dictionary<string, object>;
+                var usage = dict.GetValueOrDefault<Dictionary<string, object>>("usage");
                 if (usage != null)
                 {
-                    inputTokens = Convert.ToInt32(usage.GetValueOrDefault("prompt_tokens") ?? 0);
-                    outputTokens = Convert.ToInt32(usage.GetValueOrDefault("completion_tokens") ?? 0);
+                    inputTokens = Convert.ToInt32(usage.GetValueOrDefault<object>("prompt_tokens") ?? 0);
+                    outputTokens = Convert.ToInt32(usage.GetValueOrDefault<object>("completion_tokens") ?? 0);
                 }
 
                 return new LLMResponse
@@ -274,10 +280,10 @@ namespace AIPolishCOMAddin.Infrastructure
             try
             {
                 var dict = _json.Deserialize<Dictionary<string, object>>(json);
-                var error = dict.GetValueOrDefault("error") as Dictionary<string, object>;
+                var error = dict.GetValueOrDefault<Dictionary<string, object>>("error");
 
-                string message = error?.GetValueOrDefault("message") as string ?? json;
-                string type = error?.GetValueOrDefault("type") as string ?? "api_error";
+                string message = error?.GetValueOrDefault<string>("message") ?? json;
+                string type = error?.GetValueOrDefault<string>("type") ?? "api_error";
 
                 if (message.Length > 200)
                     message = message.Substring(0, 200) + "...";

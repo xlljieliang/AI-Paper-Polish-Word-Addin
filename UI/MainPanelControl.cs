@@ -8,6 +8,8 @@ using AIPolishCOMAddin.Infrastructure;
 using AIPolishCOMAddin.Models;
 using AIPolishCOMAddin.Utils;
 using Microsoft.Office.Interop.Word;
+using Font = System.Drawing.Font;
+using Task = System.Threading.Tasks.Task;
 
 namespace AIPolishCOMAddin.UI
 {

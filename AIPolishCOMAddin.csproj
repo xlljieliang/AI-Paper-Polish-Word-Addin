@@ -15,6 +15,7 @@
     <TargetOfficeVersion>16.0</TargetOfficeVersion>
     <OfficeApplication>Word</OfficeApplication>
     <VSTO_TrustAssembliesLocation>true</VSTO_TrustAssembliesLocation>
+    <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -70,6 +71,7 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
+    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
