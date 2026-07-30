@@ -191,8 +191,7 @@ jobs:
         shell: pwsh
         run: |
           $buildTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss UTC")
-
-@"
+          $summary = @"
 # ✅ 编译完成！
 
 | 项目 | 信息 |
@@ -207,9 +206,10 @@ jobs:
 ## 🚀 安装步骤
 
 1. 下载并解压
-2. 将文件夹放到固定位置（如 `D:\Tools\AIPolish\`）**安装后不要移动！**
-3. 双击 `install.bat`
-4. 打开 **Word** → **文件** → **选项** → **加载项**
-5. **管理: COM加载项** → **转到**
-6. 勾选 **AI论文润色助手** → **确定**
-"@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+2. 将文件夹放到固定位置（如 D:\Tools\AIPolish\），安装后不要移动！
+3. 双击 install.bat
+4. 打开 Word → 文件 → 选项 → 加载项
+5. 管理: COM加载项 → 转到
+6. 勾选 AI论文润色助手 → 确定
+"@
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
