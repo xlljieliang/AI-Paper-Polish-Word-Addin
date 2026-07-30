@@ -13,29 +13,78 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
-      - name: Check VSTO environment
+      - name: Check VSTO targets
+        id: check_vsto
         shell: pwsh
         run: |
-          $found = $false
+          $targetName = "Microsoft.VisualStudio.Tools.Office.targets"
           $paths = @(
             "$env:ProgramFiles"
             "${env:ProgramFiles(x86)}"
           )
+          $found = $false
           foreach ($p in $paths) {
-            $r = Get-ChildItem $p -Recurse -Filter "Microsoft.VisualStudio.Tools.Office.targets" -ErrorAction SilentlyContinue
-            if ($r) { Write-Host "FOUND VSTO: $($r[0].FullName)"; $found = $true }
+            $files = Get-ChildItem $p -Recurse -Filter $targetName -ErrorAction SilentlyContinue
+            if ($files) {
+              Write-Host "Found: $($files[0].FullName)"
+              $found = $true
+            }
           }
-          if (-not $found) { Write-Host "NEED_VSTO=true" }
+          if ($found) {
+            "vsto_installed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "vsto_installed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "VSTO targets missing - will install Office workload"
+          }
 
-      - name: Install Office workload if needed
-        if: failure()
+      - name: Install VSTO (Office/SharePoint workload)
+        if: steps.check_vsto.outputs.vsto_installed == 'false'
         shell: pwsh
         run: |
-          $p = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
-          if (-not (Test-Path $p)) { $p = "C:\Program Files\Microsoft Visual Studio\Installer\vs_installer.exe" }
-          if (Test-Path $p) {
-            & $p modify --installPath "$((& $p.Substring(0,$p.LastIndexOf('\')) + '\vswhere.exe') -latest -property installationPath)" --add Microsoft.VisualStudio.Workload.Office --includeRecommended --quiet --wait --norestart
+          Write-Host "Locating VS installer..."
+          $installer = $null
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+            "$env:ProgramFiles\Microsoft Visual Studio\Installer\vs_installer.exe"
+          )
+          foreach ($c in $candidates) {
+            if (Test-Path $c) { $installer = $c; break }
           }
+          if (-not $installer) {
+            Write-Host "Downloading VS Build Tools..."
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile "vs_buildtools.exe"
+            $installer = (Get-Item "vs_buildtools.exe").FullName
+            $args = @(
+              "--quiet", "--wait", "--norestart"
+              "--installPath", "C:\VS_BT"
+              "--add", "Microsoft.VisualStudio.Workload.Office"
+              "--add", "Microsoft.VisualStudio.Workload.ManagedDesktop"
+              "--includeRecommended"
+            )
+            Write-Host "Installing VS Build Tools with Office workload..."
+            Start-Process -FilePath $installer -ArgumentList $args -Wait -NoNewWindow
+            # Add to PATH for subsequent steps
+            $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
+          } else {
+            $installerDir = Split-Path $installer -Parent
+            $vswhere = Join-Path $installerDir "vswhere.exe"
+            if (Test-Path $vswhere) {
+              $vsPath = & $vswhere -latest -property installationPath
+              Write-Host "Found VS at: $vsPath"
+            } else {
+              $vsPath = Join-Path (Split-Path $installerDir -Parent) "Enterprise"
+            }
+            $args = @(
+              "modify"
+              "--installPath", "`"$vsPath`""
+              "--add", "Microsoft.VisualStudio.Workload.Office"
+              "--includeRecommended"
+              "--quiet", "--wait", "--norestart"
+            )
+            Write-Host "Modifying VS installation to add Office workload..."
+            Start-Process -FilePath $installer -ArgumentList $args -Wait -NoNewWindow
+          }
+          Write-Host "Installation complete."
 
       - name: Generate signing key
         shell: pwsh
@@ -44,17 +93,19 @@ jobs:
           $pwd = ConvertTo-SecureString "pwd" -Force -AsPlainText
           Export-PfxCertificate -Cert $cert -FilePath "AIPolishCOMAddin_TemporaryKey.pfx" -Password $pwd
 
-      - name: Build
+      - name: Build VSTO project
         shell: pwsh
         run: |
+          Write-Host "Starting build..."
           msbuild AIPolishCOMAddin.csproj /restore /t:Rebuild /p:Configuration=Release /p:Platform="Any CPU" /p:SignAssembly=false /v:m
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          Write-Host "Build succeeded!"
 
-      - name: Package
+      - name: Package artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path publish
-          Copy-Item "bin\Release\AIPolishCOMAddin.dll" "publish\" -ErrorAction SilentlyContinue
+          Copy-Item "bin\Release\AIPolishCOMAddin.dll" "publish\" -ErrorAction Stop
           Copy-Item "install.bat" "publish\" -ErrorAction SilentlyContinue
           Copy-Item "uninstall.bat" "publish\" -ErrorAction SilentlyContinue
           Copy-Item "Register_Addin.reg" "publish\" -ErrorAction SilentlyContinue
@@ -62,6 +113,8 @@ jobs:
           Copy-Item "README.md" "publish\" -ErrorAction SilentlyContinue
           $h = Get-FileHash "publish\AIPolishCOMAddin.dll" -Algorithm SHA256
           Set-Content "publish\AIPolishCOMAddin.dll.sha256" $h.Hash
+          Write-Host "Package contents:"
+          Get-ChildItem publish | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
@@ -71,4 +124,4 @@ jobs:
 
       - name: Summary
         shell: pwsh
-        run: 'Write-Output "Build complete. Download from Artifacts." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append'
+        run: 'Write-Output "Build complete. dll ready for download." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append'
