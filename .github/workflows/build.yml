@@ -118,7 +118,7 @@ jobs:
           $coreDll = "Microsoft.Office.Core.dll"
           $coreDest = Join-Path lib $coreDll
           if (-not (Test-Path $coreDest)) {
-            # Search order: PIA dir, VS ref dir, GAC, broad search
+            # Search order: PIA dir, VS ref dir, GAC, MSI extract, broad search
             $found = $null
             if (Test-Path (Join-Path $piaDir $coreDll)) {
               $found = Join-Path $piaDir $coreDll
@@ -127,6 +127,14 @@ jobs:
             } else {
               $foundGac = Get-ChildItem $gacRoot -Filter $coreDll -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($foundGac) { $found = $foundGac.FullName }
+            }
+            if (-not $found) {
+              # Search VSTO Runtime MSI extraction
+              $extractDir = "$env:RUNNER_TEMP\vsto_extract"
+              if (Test-Path $extractDir) {
+                $foundMsi = Get-ChildItem $extractDir -Filter $coreDll -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($foundMsi) { $found = $foundMsi.FullName }
+              }
             }
             if ($found) {
               Copy-Item $found $coreDest -Force

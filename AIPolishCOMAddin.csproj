@@ -40,10 +40,9 @@
     <AssemblyOriginatorKeyFile>AIPolishCOMAddin_TemporaryKey.pfx</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.Office.Core">
-      <HintPath>$(MSBuildProjectDirectory)\lib\Microsoft.Office.Core.dll</HintPath>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </Reference>
+    <!-- Microsoft.Office.Core reference removed: Office.Core COM interop types
+         are already embedded in Microsoft.Office.Tools.Common.v4.0.Utilities.dll,
+         and all CommandBar usage is via dynamic. CI runner lacks this DLL. -->
     <Reference Include="Microsoft.Office.Interop.Word">
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
@@ -137,11 +136,6 @@
       <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.VisualStudio.Tools.Applications.Runtime.dll">
         <Private>False</Private>
         <FusionName>Microsoft.VisualStudio.Tools.Applications.Runtime, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</FusionName>
-      </ReferencePath>
-      <!-- Microsoft.Office.Core interop assembly (required by VSTO types) -->
-      <ReferencePath Include="$(MSBuildProjectDirectory)\lib\Microsoft.Office.Core.dll" Condition="Exists('$(MSBuildProjectDirectory)\lib\Microsoft.Office.Core.dll')">
-        <EmbedInteropTypes>True</EmbedInteropTypes>
-        <Private>False</Private>
       </ReferencePath>
     </ItemGroup>
     <Message Importance="high" Text="[VSTO-FORCE] Injected VSTO refs. ReferencePath now has @(ReferencePath->Count()) items:" />
