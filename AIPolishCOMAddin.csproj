@@ -105,5 +105,8 @@
   <ItemGroup>
     <None Include="AIPolishCOMAddin_TemporaryKey.pfx" />
   </ItemGroup>
+  <!-- VS2026 VSTO targets at OfficeTools\ may have broken import chains,
+       so import CSharp targets explicitly to ensure Build/Build target exists -->
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
 </Project>
