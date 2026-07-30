@@ -92,6 +92,45 @@ jobs:
             Write-Host "MSI extracted to $extractDir"
           }
 
+      - name: Download Office PIA (for Microsoft.Office.Core.dll)
+        shell: pwsh
+        run: |
+          # Office 2010 PIA Redistributable provides Microsoft.Office.Core.dll
+          # which is required as a transitive dependency of VSTO runtime assemblies.
+          # Available from: https://www.microsoft.com/en-us/download/details.aspx?id=3508
+          $url = "https://download.microsoft.com/download/c/1/d/c1d6dbbb-700d-4669-98cf-820ac3ae8e55/PIARedist.exe"
+          Write-Host "Downloading Office 2010 PIA Redistributable..."
+          Invoke-WebRequest -Uri $url -OutFile "PIARedist.exe" -ErrorAction Stop
+          Write-Host "Downloaded: $((Get-Item PIARedist.exe).Length) bytes"
+
+          # Extract MSI via /layout
+          $piaExtractDir = "$env:RUNNER_TEMP\pia_extract"
+          New-Item -ItemType Directory -Force -Path $piaExtractDir | Out-Null
+          Write-Host "Extracting PIA MSI..."
+          Start-Process -FilePath ".\PIARedist.exe" -ArgumentList "/layout `"$piaExtractDir`" /quiet" -Wait -NoNewWindow -PassThru
+
+          # Extract files from MSI
+          $msi = Get-ChildItem $piaExtractDir -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) {
+            Write-Host "MSI found: $($msi.FullName)"
+            $extractDir = "$env:RUNNER_TEMP\pia_msi_extract"
+            New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+            Start-Process msiexec -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$extractDir`"" -Wait -NoNewWindow -PassThru
+            $dll = Get-ChildItem $extractDir -Filter "Microsoft.Office.Core.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($dll) {
+              Write-Host "Found Microsoft.Office.Core.dll at $($dll.FullName)"
+              New-Item -ItemType Directory -Force -Path lib | Out-Null
+              Copy-Item $dll.FullName lib\Microsoft.Office.Core.dll -Force
+              Write-Host "Copied to lib\Microsoft.Office.Core.dll"
+            } else {
+              Write-Host "WARNING: Microsoft.Office.Core.dll not found in PIA MSI extraction"
+            }
+          } else {
+            Write-Host "WARNING: No MSI found in PIA extraction"
+            # Try listing what was extracted
+            Get-ChildItem $piaExtractDir -Recurse | Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
+          }
+
       - name: Stage VSTO reference assemblies
         shell: pwsh
         run: |

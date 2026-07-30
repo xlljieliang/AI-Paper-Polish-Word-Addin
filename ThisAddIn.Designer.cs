@@ -3,17 +3,21 @@ namespace AIPolishCOMAddin
     partial class ThisAddIn
     {
         private System.ComponentModel.IContainer components = null;
-        private Microsoft.Office.Tools.CustomTaskPane _mainTaskPane;
+        // Use dynamic to avoid compile-time dependency on VSTO CustomTaskPane type.
+        // The actual VSTO type is resolved at runtime when loaded in Word.
+        private dynamic _mainTaskPane;
         private UI.MainPanelControl _mainPanel;
         private UI.SettingPanelControl _settingPanel;
 
-        protected override void Dispose(bool disposing)
+        // Dispose is NOT an override. Instead, we hook the VSTO Shutdown event
+        // in ThisAddIn.cs and call Cleanup() from there, avoiding the need for
+        // the VSTO-generated base class at compile time.
+        private void Cleanup(bool disposing)
         {
             if (disposing && (components != null))
             {
                 components.Dispose();
             }
-            base.Dispose(disposing);
         }
 
         #region VSTO Designer generated code
@@ -39,7 +43,7 @@ namespace AIPolishCOMAddin
                 _mainPanel = new UI.MainPanelControl();
                 _settingPanel = new UI.SettingPanelControl();
 
-                _mainPanel.SetWordApplication(this.Application);
+                _mainPanel.SetWordApplication(((dynamic)this).Application);
 
                 // 创建 TabControl 作为两个面板的容器
                 var tabControl = new System.Windows.Forms.TabControl();
@@ -59,8 +63,8 @@ namespace AIPolishCOMAddin
                 tabControl.TabPages.Add(tabMain);
                 tabControl.TabPages.Add(tabSetting);
 
-                // 通过 VSTO CustomTaskPanes 集合添加面板
-                _mainTaskPane = this.CustomTaskPanes.Add(tabControl, "AI论文润色助手");
+                // 通过 VSTO CustomTaskPanes 集合添加面板 (dynamic to avoid compile-time dep)
+                _mainTaskPane = ((dynamic)this).CustomTaskPanes.Add(tabControl, "AI论文润色助手");
                 _mainTaskPane.Visible = true;
 
                 // 绑定事件

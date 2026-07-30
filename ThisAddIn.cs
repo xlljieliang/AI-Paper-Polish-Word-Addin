@@ -48,6 +48,12 @@ namespace AIPolishCOMAddin
             {
                 Logger.Error("ThisAddIn_Shutdown 异常", ex);
             }
+            finally
+            {
+                // Call cleanup manually instead of Dispose(bool) override
+                // (avoids compile-time dependency on VSTO base class)
+                Cleanup(true);
+            }
         }
 
         #region 右键菜单
@@ -60,7 +66,7 @@ namespace AIPolishCOMAddin
         {
             try
             {
-                var popupMenu = this.Application.CommandBars["Text"];
+                var popupMenu = ((dynamic)this).Application.CommandBars["Text"];
                 if (popupMenu == null) return;
 
                 // 防止重复注册
@@ -122,7 +128,7 @@ namespace AIPolishCOMAddin
             {
                 Logger.Info("右键菜单触发: AI润色选中段落");
 
-                if (!WordHelper.HasSelection(this.Application))
+                if (!WordHelper.HasSelection(((dynamic)this).Application))
                 {
                     MessageBox.Show("请先在文档中选中要润色的文本段落。",
                         "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
