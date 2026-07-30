@@ -86,8 +86,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Starting build..."
-          # Use /t:Build instead of /t:Rebuild for VS2026 compatibility
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build /p:Configuration=Release /p:Platform="Any CPU" /p:SignAssembly=false /v:d
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false /v:m
           if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
           Write-Host "BUILD SUCCEEDED!"
 
