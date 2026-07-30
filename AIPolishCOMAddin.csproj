@@ -47,12 +47,15 @@
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
     <Reference Include="Microsoft.Office.Tools.Common.v4.0.Utilities">
+      <HintPath>$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0\Microsoft.Office.Tools.Common.v4.0.Utilities.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.Office.Tools.v4.0.Framework">
+      <HintPath>$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0\Microsoft.Office.Tools.v4.0.Framework.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.Tools.Applications.Runtime">
+      <HintPath>$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0\Microsoft.VisualStudio.Tools.Applications.Runtime.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
@@ -112,8 +115,8 @@
   <PropertyGroup>
     <VSTORefPath Condition="Exists('$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0')">$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\VSTO40\v4.0</VSTORefPath>
   </PropertyGroup>
-  <!-- Load VSTO targets for Office type resolution -->
-  <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
-  <!-- Load CSharp targets for standard Build target -->
+  <!-- Load CSharp targets FIRST to establish standard Build/CoreBuild/Clean targets -->
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
+  <!-- Load VSTO targets LAST (important: VSTO targets must come after CSharp targets to extend the build pipeline correctly) -->
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
 </Project>
