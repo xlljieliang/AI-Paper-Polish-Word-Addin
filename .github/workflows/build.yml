@@ -65,27 +65,65 @@ jobs:
             Write-Host "Neither Office nor OfficeTools found at $v18"
           }
 
+      - name: Install VSTO Runtime Redistributable
+        shell: pwsh
+        run: |
+          Write-Host "Downloading VSTO Runtime..."
+          Invoke-WebRequest -Uri "https://aka.ms/vstoruntimeredist" -OutFile "vstor_redist.exe"
+          Write-Host "Installing VSTO Runtime (silent)..."
+          $proc = Start-Process -FilePath "vstor_redist.exe" -ArgumentList "/quiet /norestart" -Wait -NoNewWindow -PassThru
+          Write-Host "VSTO Runtime install exit code: $($proc.ExitCode)"
+          # Also try /layout to extract MSI as fallback
+          Write-Host "Extracting MSI via /layout as fallback..."
+          $layoutDir = "$env:TEMP\vsto_layout"
+          New-Item -ItemType Directory -Force -Path $layoutDir | Out-Null
+          $layoutProc = Start-Process -FilePath "vstor_redist.exe" -ArgumentList "/layout `"$layoutDir`" /quiet" -Wait -NoNewWindow -PassThru
+          $msiFiles = Get-ChildItem $layoutDir -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue
+          if ($msiFiles) {
+            Write-Host "Found MSI: $($msiFiles[0].FullName)"
+            $extractDir = "$env:TEMP\vsto_extract"
+            New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+            msiexec /a "$($msiFiles[0].FullName)" /qn TARGETDIR="$extractDir"
+            Write-Host "Extracted MSI to: $extractDir"
+          } else {
+            Write-Host "No MSI found in layout (bootstrapper may have installed directly)"
+          }
+
       - name: Copy VSTO runtime assemblies to reference path
         shell: pwsh
         run: |
           $refDir = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\VSTO40\v4.0"
           if (-not (Test-Path $refDir)) {
-            Write-Host "Creating reference directory: $refDir"
             New-Item -ItemType Directory -Force -Path $refDir | Out-Null
           }
-          # Find VSTO runtime assemblies in GAC and copy to reference path
-          $gacRoot = "C:\Windows\Microsoft.NET\assembly\GAC_MSIL"
           $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
+          $gacRoot = "C:\Windows\Microsoft.NET\assembly\GAC_MSIL"
           foreach ($asm in $needed) {
-            $paths = Get-ChildItem "$gacRoot\$asm" -Filter "*.dll" -Recurse -ErrorAction SilentlyContinue
+            $dest = Join-Path $refDir "$asm.dll"
+            if (Test-Path $dest) { Write-Host "$asm already at dest"; continue }
             $found = $false
-            foreach ($dll in $paths) {
-              $dest = Join-Path $refDir "$asm.dll"
-              Write-Host "Copying $($dll.FullName) -> $dest"
-              Copy-Item $dll.FullName $dest -Force
-              $found = $true
+            # 1) Search GAC (VSTO Runtime installs here)
+            if (Test-Path $gacRoot) {
+              $dlls = Get-ChildItem $gacRoot -Filter "$asm.dll" -Recurse -ErrorAction SilentlyContinue -Depth 5
+              if ($dlls) {
+                Copy-Item $dlls[0].FullName $dest -Force
+                Write-Host "Copied $asm from GAC: $($dlls[0].FullName)"
+                $found = $true
+              }
             }
-            if (-not $found) { Write-Host "WARNING: $asm not found in GAC" }
+            # 2) Fallback: search extracted MSI directory
+            if (-not $found) {
+              $extractDir = "$env:TEMP\vsto_extract"
+              if (Test-Path $extractDir) {
+                $dlls = Get-ChildItem $extractDir -Filter "$asm.dll" -Recurse -ErrorAction SilentlyContinue
+                if ($dlls) {
+                  Copy-Item $dlls[0].FullName $dest -Force
+                  Write-Host "Copied $asm from MSI extract: $($dlls[0].FullName)"
+                  $found = $true
+                }
+              }
+            }
+            if (-not $found) { Write-Host "ERROR: $asm.dll not found!" }
           }
 
       - name: Build VSTO project
