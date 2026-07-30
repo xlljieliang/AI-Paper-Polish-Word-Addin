@@ -8,12 +8,14 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
       - uses: microsoft/setup-msbuild@v2
 
       - name: Install VSTO workload (Office/SharePoint)
+        timeout-minutes: 15
         shell: pwsh
         run: |
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
@@ -49,26 +51,34 @@ jobs:
             $env:Path = "C:\VS_BT\MSBuild\Current\Bin;$env:Path"
           }
 
-      - name: Fix VSTO targets path (junction for VS2026+)
+      - name: Fix VSTO targets path (junction)
         shell: pwsh
         run: |
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          $v18 = Join-Path $vsPath "MSBuild\Microsoft\VisualStudio\v18.0"
-          $officeDir = Join-Path $v18 "Office"
-          $officeToolsDir = Join-Path $v18 "OfficeTools"
+          if (-not $vsPath) { Write-Host "vswhere failed, skipping junction"; return }
+          # Detect VS version dynamically
+          $vsDirs = Get-ChildItem (Join-Path $vsPath "MSBuild\Microsoft\VisualStudio") -Directory |
+            Where-Object { $_.Name -match '^v\d+\.\d+$' } |
+            Sort-Object Name -Descending
+          if (-not $vsDirs) { Write-Host "No versioned MSBuild dir found, skipping"; return }
+          $vsVerDir = $vsDirs[0].FullName
+          $vsVer = $vsDirs[0].Name
+          Write-Host "Detected VS MSBuild version: $vsVer"
+          $officeDir = Join-Path $vsVerDir "Office"
+          $officeToolsDir = Join-Path $vsVerDir "OfficeTools"
           if ((Test-Path $officeToolsDir) -and -not (Test-Path $officeDir)) {
             Write-Host "Creating junction: $officeDir -> $officeToolsDir"
             cmd.exe /c "mklink /J `"$officeDir`" `"$officeToolsDir`""
           } elseif (Test-Path $officeDir) {
             Write-Host "Office directory already exists: $officeDir"
           } else {
-            Write-Host "Neither Office nor OfficeTools found at $v18"
+            Write-Host "Neither Office nor OfficeTools found at $vsVerDir"
           }
 
       - name: Download and install VSTO Runtime
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          # Use Microsoft's permanent fwlink (aka.ms/vstoruntimeredist is broken -> redirects to Bing)
           $url = "http://go.microsoft.com/fwlink/?LinkId=158918"
           Write-Host "Downloading VSTO Runtime from $url"
           Invoke-WebRequest -Uri $url -OutFile "vstor_redist.exe" -ErrorAction Stop
@@ -78,68 +88,14 @@ jobs:
           Write-Host "Installing VSTO Runtime (silent)..."
           $proc = Start-Process -FilePath ".\vstor_redist.exe" -ArgumentList "/quiet /norestart" -Wait -NoNewWindow -PassThru
           Write-Host "Install exit code: $($proc.ExitCode)"
-          # Also extract MSI via /layout as fallback for DLL extraction
-          Write-Host "Layout/MSI extraction as fallback..."
-          $layoutDir = "$env:RUNNER_TEMP\vsto_layout"
-          New-Item -ItemType Directory -Force -Path $layoutDir | Out-Null
-          Start-Process -FilePath ".\vstor_redist.exe" -ArgumentList "/layout `"$layoutDir`" /quiet" -Wait -NoNewWindow -PassThru
-          $msi = Get-ChildItem $layoutDir -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($msi) {
-            Write-Host "MSI found: $($msi.FullName)"
-            $extractDir = "$env:RUNNER_TEMP\vsto_extract"
-            New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-            Start-Process msiexec -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$extractDir`"" -Wait -NoNewWindow -PassThru
-            Write-Host "MSI extracted to $extractDir"
-          }
-
-      - name: Download Office PIA (for Microsoft.Office.Core.dll)
-        shell: pwsh
-        run: |
-          # Office 2010 PIA Redistributable provides Microsoft.Office.Core.dll
-          # which is required as a transitive dependency of VSTO runtime assemblies.
-          # Available from: https://www.microsoft.com/en-us/download/details.aspx?id=3508
-          $url = "https://download.microsoft.com/download/c/1/d/c1d6dbbb-700d-4669-98cf-820ac3ae8e55/PIARedist.exe"
-          Write-Host "Downloading Office 2010 PIA Redistributable..."
-          Invoke-WebRequest -Uri $url -OutFile "PIARedist.exe" -ErrorAction Stop
-          Write-Host "Downloaded: $((Get-Item PIARedist.exe).Length) bytes"
-
-          # Extract MSI via /layout
-          $piaExtractDir = "$env:RUNNER_TEMP\pia_extract"
-          New-Item -ItemType Directory -Force -Path $piaExtractDir | Out-Null
-          Write-Host "Extracting PIA MSI..."
-          Start-Process -FilePath ".\PIARedist.exe" -ArgumentList "/layout `"$piaExtractDir`" /quiet" -Wait -NoNewWindow -PassThru
-
-          # Extract files from MSI
-          $msi = Get-ChildItem $piaExtractDir -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($msi) {
-            Write-Host "MSI found: $($msi.FullName)"
-            $extractDir = "$env:RUNNER_TEMP\pia_msi_extract"
-            New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-            Start-Process msiexec -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$extractDir`"" -Wait -NoNewWindow -PassThru
-            $dll = Get-ChildItem $extractDir -Filter "Microsoft.Office.Core.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($dll) {
-              Write-Host "Found Microsoft.Office.Core.dll at $($dll.FullName)"
-              New-Item -ItemType Directory -Force -Path lib | Out-Null
-              Copy-Item $dll.FullName lib\Microsoft.Office.Core.dll -Force
-              Write-Host "Copied to lib\Microsoft.Office.Core.dll"
-            } else {
-              Write-Host "WARNING: Microsoft.Office.Core.dll not found in PIA MSI extraction"
-            }
-          } else {
-            Write-Host "WARNING: No MSI found in PIA extraction"
-            # Try listing what was extracted
-            Get-ChildItem $piaExtractDir -Recurse | Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
-          }
 
       - name: Stage VSTO reference assemblies
         shell: pwsh
         run: |
-          # Copy VSTO DLLs to project's lib\ dir (used by csproj HintPath)
           New-Item -ItemType Directory -Force -Path lib | Out-Null
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if (-not $vsPath) { throw "vswhere failed - cannot locate VS installation" }
           $vsRefDir = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
-          $piaDir = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15"
-          $gacRoot = "C:\Windows\Microsoft.NET\assembly"
 
           # --- 3 VSTO runtime assemblies ---
           $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
@@ -147,68 +103,92 @@ jobs:
             $dest = Join-Path lib "$asm.dll"
             if (Test-Path $dest) { Write-Host "$asm OK"; continue }
             $path = Join-Path $vsRefDir "$asm.dll"
-            if (Test-Path $path) { Copy-Item $path $dest -Force; Write-Host "$asm copied from VS"; continue }
-            $dlls = Get-ChildItem $gacRoot -Filter "$asm.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue
-            if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm copied from GAC"; continue }
+            if (Test-Path $path) { Copy-Item $path $dest -Force; Write-Host "$asm copied from VS ($((Get-Item $dest).Length) bytes)"; continue }
             throw "FATAL: $asm.dll not found!"
           }
 
-          # --- Microsoft.Office.Core (needed by VSTO types for COM interop) ---
-          $coreDll = "Microsoft.Office.Core.dll"
-          $coreDest = Join-Path lib $coreDll
+          # --- Microsoft.Office.Core stub ---
+          # VSTO runtime assemblies have a MANIFEST dependency on Microsoft.Office.Core.dll.
+          # The real PIA is not on CI runners, and downloading it hangs/timeouts.
+          # We generate a minimal stub assembly that satisfies the CLR assembly loader
+          # so CSC can resolve VSTO types. The actual COM interop types are defined
+          # inside the VSTO Common Utilities assembly — the stub only unblocks loading.
+          $coreDest = Join-Path lib "Microsoft.Office.Core.dll"
           if (-not (Test-Path $coreDest)) {
-            # Search order: PIA dir, VS ref dir, GAC, MSI extract, broad search
-            $found = $null
-            if (Test-Path (Join-Path $piaDir $coreDll)) {
-              $found = Join-Path $piaDir $coreDll
-            } elseif (Test-Path (Join-Path $vsRefDir $coreDll)) {
-              $found = Join-Path $vsRefDir $coreDll
-            } else {
-              $foundGac = Get-ChildItem $gacRoot -Filter $coreDll -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($foundGac) { $found = $foundGac.FullName }
-            }
-            if (-not $found) {
-              # Search VSTO Runtime MSI extraction
-              $extractDir = "$env:RUNNER_TEMP\vsto_extract"
-              if (Test-Path $extractDir) {
-                $foundMsi = Get-ChildItem $extractDir -Filter $coreDll -Recurse -Depth 4 -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($foundMsi) { $found = $foundMsi.FullName }
-              }
-            }
-            if ($found) {
-              Copy-Item $found $coreDest -Force
-              Write-Host "$coreDll copied from $found"
-            } else {
-              Write-Host "WARNING: $coreDll not found in known locations. Searching disk..."
-              $broad = Get-ChildItem "C:\Program Files" -Filter $coreDll -Recurse -Depth 8 -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($broad) { Copy-Item $broad.FullName $coreDest -Force; Write-Host "$coreDll found at $($broad.FullName)" }
-              else { Write-Host "WARNING: $coreDll not found anywhere - build may fail" }
-            }
+            Write-Host "Generating Microsoft.Office.Core.dll stub (satisfies transitive dep)..."
+            $stubSource = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Collections;
+
+namespace Microsoft.Office.Core {
+    [ComImport, TypeLibType(4304), Guid("000C0300-0000-0000-C000-000000000046")]
+    public interface _CommandBars : IEnumerable { [DispId(0)] object get_Item(object Index); }
+    [ComImport, Guid("000C030E-0000-0000-C000-000000000046"), TypeLibType(4288)]
+    public interface _CommandBarsEvents { }
+    [ComImport, Guid("55F88890-7708-11D1-ACEB-006008961DA5"), TypeLibType(4288)]
+    public interface CommandBarControl { }
+    [ComImport, Guid("000C0307-0000-0000-C000-000000000046"), TypeLibType(4160)]
+    public interface _CommandBarButton { }
+    [ComImport, Guid("000C030C-0000-0000-C000-000000000046"), TypeLibType(4160)]
+    public interface _CommandBarComboBox { }
+    [ComImport, Guid("000C0352-0000-0000-C000-000000000046"), TypeLibType(4288)]
+    public interface _CommandBarButtonEvents { }
+    [ComImport, Guid("000C0354-0000-0000-C000-000000000046"), TypeLibType(4288)]
+    public interface _CommandBarComboBoxEvents { }
+    [ComImport, TypeLibType(4160), Guid("000C0395-0000-0000-C000-000000000046")]
+    public interface IRibbonExtensibility { }
+    [ComImport, TypeLibType(4304), Guid("000C03A6-0000-0000-C000-000000000046")]
+    public interface IRibbonUI { }
+    [ComImport, TypeLibType(4288), Guid("0002E180-0000-0000-C000-000000000046")]
+    public interface _IMsoDispObj { }
+    [ComImport, TypeLibType(4288), Guid("000C0310-0000-0000-C000-000000000046")]
+    public interface IAccessible { }
+    [ComImport, TypeLibType(4096), Guid("618736E0-3C3D-11CF-810C-00AA00389B71")]
+    public interface _IMsoOleAccDispObj { }
+    [ComImport, Guid("00067216-0000-0000-C000-000000000046"), TypeLibType(4288)]
+    public interface IMsoEnvelopeVB { }
+    [ComImport, Guid("00067217-0000-0000-C000-000000000046"), TypeLibType(4288)]
+    public interface IMsoEnvelopeVBEvents { }
+    [ComImport, TypeLibType(4160), Guid("000CDC05-0000-0000-C000-000000000046")]
+    public interface _CustomXMLPart { }
+    [ComImport, TypeLibType(4160), Guid("000CDC06-0000-0000-C000-000000000046")]
+    public interface _CustomXMLParts { }
+    [ComImport, TypeLibType(4288), Guid("000CDC15-0000-0000-C000-000000000046")]
+    public interface _CustomXMLSchemaCollection { }
+    [ComImport, TypeLibType(4288), Guid("000CDC0C-0000-0000-C000-000000000046")]
+    public interface _CustomXMLPartEvents { }
+    [ComImport, TypeLibType(4288), Guid("000CDC0F-0000-0000-C000-000000000046")]
+    public interface _CustomXMLPartsEvents { }
+    [ComImport, TypeLibType(4160), Guid("000C033B-0000-0000-C000-000000000046")]
+    public interface _CustomTaskPane { }
+    [ComImport, TypeLibType(4288), Guid("000C033C-0000-0000-C000-000000000046")]
+    public interface _CustomTaskPaneEvents { }
+    [ComImport, TypeLibType(4304), Guid("000C1712-0000-0000-C000-000000000046")]
+    public interface IMsoChartTitle { }
+    public delegate void _CommandBarButtonEvents_ClickEventHandler(CommandBarControl Ctrl, ref bool CancelDefault);
+    public delegate void _CommandBarComboBoxEvents_ChangeEventHandler(CommandBarControl Ctrl);
+    public delegate void _CommandBarsEvents_OnUpdateEventHandler();
+    public delegate void _CustomTaskPaneEvents_VisibleStateChangeEventHandler(_CustomTaskPane CustomTaskPaneInst);
+    public delegate void _CustomTaskPaneEvents_DockPositionStateChangeEventHandler(_CustomTaskPane CustomTaskPaneInst);
+}
+'@
+            Add-Type -TypeDefinition $stubSource -OutputAssembly $coreDest -ErrorAction Stop
+            Write-Host "Stub generated: $((Get-Item $coreDest).Length) bytes"
           } else {
-            Write-Host "$coreDll OK"
+            Write-Host "Microsoft.Office.Core.dll OK"
           }
 
-          Write-Host "All VSTO reference assemblies staged to lib\ successfully."
+          Write-Host "All reference assemblies staged:"
           Get-ChildItem lib | ForEach-Object { Write-Host "  lib\$($_.Name) ($($_.Length) bytes)" }
 
-      - name: Verify staged DLLs
-        shell: pwsh
-        run: |
-          $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
-          foreach ($asm in $needed) {
-            $dll = Join-Path lib "$asm.dll"
-            Write-Host "--- $dll ---"
-            if (-not (Test-Path $dll)) { throw "MISSING: $dll" }
-            Write-Host "  Size: $((Get-Item $dll).Length) bytes"
+          # Quick verification: can we load each staged DLL?
+          Get-ChildItem lib -Filter "*.dll" | ForEach-Object {
             try {
-              $a = [System.Reflection.Assembly]::LoadFrom((Resolve-Path $dll))
-              Write-Host "  FullName: $($a.FullName)"
-              Write-Host "  Location: $($a.Location)"
-              $types = $a.GetExportedTypes() | ForEach-Object { $_.FullName }
-              Write-Host "  Exported types ($($types.Count)):"
-              $types | ForEach-Object { Write-Host "    $_" }
+              $a = [System.Reflection.Assembly]::LoadFrom($_.FullName)
+              Write-Host "  $($_.Name) -> $($a.FullName)"
             } catch {
-              Write-Host "  Load error: $_"
+              Write-Host "  $($_.Name) -> Load warning: $_"
             }
           }
 
@@ -219,9 +199,12 @@ jobs:
           # Resolve VS reference assemblies path for VSTO (workaround for MSBuild bug #7617:
           # AssemblyFolders.config may be missing or not include VSTO paths on build server)
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if (-not $vsPath) { throw "vswhere failed to detect VS installation path" }
           $vstoRefPath = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
-          Write-Host "VSTO ReferencePath: $vstoRefPath"
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /p:UseSharedCompilation=false /v:n
+          $libPath = Join-Path $PWD.Path "lib"
+          $combinedRefPath = "$vstoRefPath;$libPath"
+          Write-Host "ReferencePath: $combinedRefPath"
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$combinedRefPath" /p:UseSharedCompilation=false /v:n
           if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
           Write-Host "BUILD SUCCEEDED!"
 
