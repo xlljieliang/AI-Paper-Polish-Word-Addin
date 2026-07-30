@@ -82,6 +82,32 @@ jobs:
             }
           }
 
+      - name: Diagnose VSTO references
+        shell: pwsh
+        run: |
+          Write-Host "=== Searching for Office.Core (office.dll) ==="
+          $paths = @(
+            "$env:ProgramFiles\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PublicAssemblies",
+            "$env:ProgramFiles\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PrivateAssemblies",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0",
+            "$env:ProgramFiles\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\v4.0",
+            "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\VSTO40\v4.0",
+            "$env:ProgramFiles\Reference Assemblies\Microsoft\VSTO40\v4.0",
+            "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8",
+            "$env:ProgramFiles\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8",
+            "C:\Windows\Microsoft.NET\assembly\GAC_MSIL"
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Contents of $p:"
+              Get-ChildItem $p -Recurse -Filter "office.dll" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND: $($_.FullName)" }
+              Get-ChildItem $p -Recurse -Filter "Microsoft.Office.Core*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND: $($_.FullName)" }
+              Get-ChildItem $p -Recurse -Filter "Microsoft.Office.Tools.Common*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  FOUND VSTO: $($_.FullName)" }
+            } else {
+              Write-Host "NOT FOUND: $p"
+            }
+          }
+
       - name: Build VSTO project
         shell: pwsh
         run: |
