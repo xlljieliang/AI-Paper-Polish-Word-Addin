@@ -1,0 +1,160 @@
+name: 🏗️ 编译 AI论文润色助手
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - '**.cs'
+      - '**.csproj'
+      - '**/*.resx'
+  workflow_dispatch:   # 支持手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔧 安装 Visual Studio 并添加 Office/SharePoint 工作负载
+        shell: pwsh
+        run: |
+          Write-Host "检查 VS 安装状态..."
+          $vsPath = & "C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "VS 路径: $vsPath"
+
+          if (-not (Test-Path "$vsPath\MSBuild\Current\Bin\MSBuild.exe")) {
+              Write-Host "⚠️ MSBuild 未找到，安装 Build Tools..."
+              $vsInstaller = "vs_BuildTools.exe"
+              Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $vsInstaller
+              Start-Process -Wait -FilePath $vsInstaller -ArgumentList @(
+                  "--quiet", "--wait", "--norestart",
+                  "--installPath", "C:\VS_BuildTools",
+                  "--add", "Microsoft.VisualStudio.Workload.Office",
+                  "--add", "Microsoft.VisualStudio.Workload.ManagedDesktop",
+                  "--includeRecommended"
+              )
+              Write-Host "Build Tools 安装完成"
+          } else {
+              Write-Host "✅ MSBuild 已存在，尝试添加 Office 工作负载..."
+              # 尝试为已有的 VS 安装添加 Office 工作负载
+              $vsInstaller = "$vsPath\..\Installer\vs_installer.exe"
+              if (Test-Path $vsInstaller) {
+                  Start-Process -Wait -FilePath $vsInstaller -ArgumentList @(
+                      "modify",
+                      "--installPath", "`"$vsPath`"",
+                      "--add", "Microsoft.VisualStudio.Workload.Office",
+                      "--includeRecommended",
+                      "--quiet", "--wait", "--norestart"
+                  )
+                  Write-Host "Office 工作负载安装完成"
+              }
+          }
+
+      - name: 🧰 初始化 MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 🔑 生成临时签名密钥
+        shell: pwsh
+        run: |
+          # 生成一个真正的 .pfx 密钥用于 CI 编译
+          $cert = New-SelfSignedCertificate -Subject "CN=AIPolishDev" -CertStoreLocation "Cert:\CurrentUser\My" -Type CodeSigning -KeyExportPolicy Exportable
+          $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath "AIPolishCOMAddin_TemporaryKey.pfx" -Password $pwd
+          Write-Host "✅ 签名密钥已生成"
+
+      - name: 🏗️ 编译项目
+        shell: pwsh
+        run: |
+          Write-Host "开始编译 VSTO 项目..."
+          $logFile = "msbuild.log"
+
+          msbuild AIPolishCOMAddin.csproj `
+              /restore `
+              /t:Rebuild `
+              /p:Configuration=Release `
+              /p:Platform="Any CPU" `
+              /fl "/flp:LogFile=$logFile;Verbosity=normal"
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "❌ 编译失败！查看日志："
+              Get-Content $logFile -Tail 50
+              exit 1
+          } else {
+              Write-Host "✅ 编译成功！"
+          }
+
+      - name: 📦 打包产物
+        shell: pwsh
+        run: |
+          # 创建发布包目录
+          New-Item -ItemType Directory -Force -Path publish
+
+          # 复制编译产物
+          if (Test-Path "bin\Release\AIPolishCOMAddin.dll") {
+              Copy-Item "bin\Release\AIPolishCOMAddin.dll" "publish\"
+              Copy-Item "bin\Release\AIPolishCOMAddin.pdb" "publish\"
+          }
+
+          # 复制安装脚本和文档
+          Copy-Item "install.bat" "publish\"
+          Copy-Item "uninstall.bat" "publish\"
+          Copy-Item "Register_Addin.reg" "publish\"
+          Copy-Item "Unregister_Addin.reg" "publish\"
+          Copy-Item "README.md" "publish\"
+
+          # 生成校验文件
+          $hash = Get-FileHash "publish\AIPolishCOMAddin.dll" -Algorithm SHA256
+          Set-Content "publish\AIPolishCOMAddin.dll.sha256" $hash.Hash
+
+          Write-Host "📦 发布包内容:"
+          Get-ChildItem publish | Select-Object Name, Length
+
+      - name: ⬆️ 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIPolishCOMAddin-Release
+          path: publish/
+          if-no-files-found: error
+
+      - name: 📋 生成发布摘要
+        shell: pwsh
+        run: |
+          $version = "1.0.0"
+          $buildTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+
+          $summary = @"
+          # ✅ 编译完成
+
+          | 项目 | 信息 |
+          |------|------|
+          | 版本 | $version |
+          | 编译时间 | $buildTime UTC |
+          | 运行环境 | GitHub Actions (windows-latest) |
+
+          ## 📥 下载
+
+          点击上方 **Summary** 页面底部的 **Artifacts** → **AIPolishCOMAddin-Release** 下载压缩包。
+
+          ## 📦 压缩包内容
+
+          | 文件 | 说明 |
+          |------|------|
+          | AIPolishCOMAddin.dll | 插件本体 |
+          | AIPolishCOMAddin.dll.sha256 | 文件校验值 |
+          | install.bat | 🔧 一键安装脚本 |
+          | uninstall.bat | 🗑️ 卸载脚本 |
+          | Register_Addin.reg | 注册表注册 |
+          | Unregister_Addin.reg | 注册表卸载 |
+          | README.md | 完整使用文档 |
+
+          ## 🚀 安装步骤
+
+          1. 下载并解压 `AIPolishCOMAddin-Release.zip`
+          2. 将文件夹放到固定位置（如 `D:\Tools\AIPolish\`）
+          3. 双击 `install.bat`
+          4. 打开 Word → 文件 → 选项 → 加载项 → COM加载项 → 启用
+          "@
+
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8

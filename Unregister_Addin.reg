@@ -1,0 +1,9 @@
+Windows Registry Editor Version 5.00
+
+; AI论文润色助手 - 卸载注册表脚本
+; 双击运行即可从Word COM加载项列表中移除插件
+
+[-HKEY_CURRENT_USER\Software\Microsoft\Office\Word\Addins\AIPolishCOMAddin]
+
+; 可选：也删除插件的设置数据（注释掉则保留设置以便重新安装）
+; [-HKEY_CURRENT_USER\Software\AIPaperPolishAddin]

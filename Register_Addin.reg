@@ -1,0 +1,12 @@
+Windows Registry Editor Version 5.00
+
+; AI论文润色助手 - Word COM加载项注册脚本
+; 安装前请先修改下面 [INSTALL_DIR] 为实际DLL所在路径
+; 也可以直接运行 install.bat 自动完成注册
+
+[HKEY_CURRENT_USER\Software\Microsoft\Office\Word\Addins\AIPolishCOMAddin]
+"FriendlyName"="AI论文润色助手"
+"Description"="AI顶会论文润色插件 - 支持NeurIPS/ICLR/ICML/CVPR/ICCV/ECCV/AAAI"
+"LoadBehavior"=dword:00000003
+"Manifest"="file:///[INSTALL_DIR]/AIPolishCOMAddin.dll"
+"CommandLineSafe"=dword:00000000
