@@ -99,20 +99,50 @@ jobs:
           New-Item -ItemType Directory -Force -Path lib | Out-Null
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $vsRefDir = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
+          $piaDir = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15"
           $gacRoot = "C:\Windows\Microsoft.NET\assembly"
+
+          # --- 3 VSTO runtime assemblies ---
           $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
           foreach ($asm in $needed) {
             $dest = Join-Path lib "$asm.dll"
             if (Test-Path $dest) { Write-Host "$asm OK"; continue }
-            # 1) VS Common7\IDE\ReferenceAssemblies\v4.0
             $path = Join-Path $vsRefDir "$asm.dll"
             if (Test-Path $path) { Copy-Item $path $dest -Force; Write-Host "$asm copied from VS"; continue }
-            # 2) GAC
             $dlls = Get-ChildItem $gacRoot -Filter "$asm.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue
             if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm copied from GAC"; continue }
             throw "FATAL: $asm.dll not found!"
           }
+
+          # --- Microsoft.Office.Core (needed by VSTO types for COM interop) ---
+          $coreDll = "Microsoft.Office.Core.dll"
+          $coreDest = Join-Path lib $coreDll
+          if (-not (Test-Path $coreDest)) {
+            # Search order: PIA dir, VS ref dir, GAC, broad search
+            $found = $null
+            if (Test-Path (Join-Path $piaDir $coreDll)) {
+              $found = Join-Path $piaDir $coreDll
+            } elseif (Test-Path (Join-Path $vsRefDir $coreDll)) {
+              $found = Join-Path $vsRefDir $coreDll
+            } else {
+              $foundGac = Get-ChildItem $gacRoot -Filter $coreDll -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($foundGac) { $found = $foundGac.FullName }
+            }
+            if ($found) {
+              Copy-Item $found $coreDest -Force
+              Write-Host "$coreDll copied from $found"
+            } else {
+              Write-Host "WARNING: $coreDll not found in known locations. Searching disk..."
+              $broad = Get-ChildItem "C:\Program Files" -Filter $coreDll -Recurse -Depth 8 -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($broad) { Copy-Item $broad.FullName $coreDest -Force; Write-Host "$coreDll found at $($broad.FullName)" }
+              else { Write-Host "WARNING: $coreDll not found anywhere - build may fail" }
+            }
+          } else {
+            Write-Host "$coreDll OK"
+          }
+
           Write-Host "All VSTO reference assemblies staged to lib\ successfully."
+          Get-ChildItem lib | ForEach-Object { Write-Host "  lib\$($_.Name) ($($_.Length) bytes)" }
 
       - name: Verify staged DLLs
         shell: pwsh
