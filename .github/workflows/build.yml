@@ -112,68 +112,17 @@ jobs:
           # The real PIA is not on CI runners, and downloading it hangs/timeouts.
           # We generate a minimal stub assembly that satisfies the CLR assembly loader
           # so CSC can resolve VSTO types. The actual COM interop types are defined
-          # inside the VSTO Common Utilities assembly — the stub only unblocks loading.
+          # inside the VSTO Common Utilities assembly - the stub only unblocks loading.
+          # The C# source is base64-encoded to avoid YAML parsing conflicts with
+          # colons in the code (e.g. interface declarations, generic constraints).
           $coreDest = Join-Path lib "Microsoft.Office.Core.dll"
           if (-not (Test-Path $coreDest)) {
-            Write-Host "Generating Microsoft.Office.Core.dll stub (satisfies transitive dep)..."
-            $stubSource = @'
-using System;
-using System.Runtime.InteropServices;
-using System.Collections;
-
-namespace Microsoft.Office.Core {
-    [ComImport, TypeLibType(4304), Guid("000C0300-0000-0000-C000-000000000046")]
-    public interface _CommandBars : IEnumerable { [DispId(0)] object get_Item(object Index); }
-    [ComImport, Guid("000C030E-0000-0000-C000-000000000046"), TypeLibType(4288)]
-    public interface _CommandBarsEvents { }
-    [ComImport, Guid("55F88890-7708-11D1-ACEB-006008961DA5"), TypeLibType(4288)]
-    public interface CommandBarControl { }
-    [ComImport, Guid("000C0307-0000-0000-C000-000000000046"), TypeLibType(4160)]
-    public interface _CommandBarButton { }
-    [ComImport, Guid("000C030C-0000-0000-C000-000000000046"), TypeLibType(4160)]
-    public interface _CommandBarComboBox { }
-    [ComImport, Guid("000C0352-0000-0000-C000-000000000046"), TypeLibType(4288)]
-    public interface _CommandBarButtonEvents { }
-    [ComImport, Guid("000C0354-0000-0000-C000-000000000046"), TypeLibType(4288)]
-    public interface _CommandBarComboBoxEvents { }
-    [ComImport, TypeLibType(4160), Guid("000C0395-0000-0000-C000-000000000046")]
-    public interface IRibbonExtensibility { }
-    [ComImport, TypeLibType(4304), Guid("000C03A6-0000-0000-C000-000000000046")]
-    public interface IRibbonUI { }
-    [ComImport, TypeLibType(4288), Guid("0002E180-0000-0000-C000-000000000046")]
-    public interface _IMsoDispObj { }
-    [ComImport, TypeLibType(4288), Guid("000C0310-0000-0000-C000-000000000046")]
-    public interface IAccessible { }
-    [ComImport, TypeLibType(4096), Guid("618736E0-3C3D-11CF-810C-00AA00389B71")]
-    public interface _IMsoOleAccDispObj { }
-    [ComImport, Guid("00067216-0000-0000-C000-000000000046"), TypeLibType(4288)]
-    public interface IMsoEnvelopeVB { }
-    [ComImport, Guid("00067217-0000-0000-C000-000000000046"), TypeLibType(4288)]
-    public interface IMsoEnvelopeVBEvents { }
-    [ComImport, TypeLibType(4160), Guid("000CDC05-0000-0000-C000-000000000046")]
-    public interface _CustomXMLPart { }
-    [ComImport, TypeLibType(4160), Guid("000CDC06-0000-0000-C000-000000000046")]
-    public interface _CustomXMLParts { }
-    [ComImport, TypeLibType(4288), Guid("000CDC15-0000-0000-C000-000000000046")]
-    public interface _CustomXMLSchemaCollection { }
-    [ComImport, TypeLibType(4288), Guid("000CDC0C-0000-0000-C000-000000000046")]
-    public interface _CustomXMLPartEvents { }
-    [ComImport, TypeLibType(4288), Guid("000CDC0F-0000-0000-C000-000000000046")]
-    public interface _CustomXMLPartsEvents { }
-    [ComImport, TypeLibType(4160), Guid("000C033B-0000-0000-C000-000000000046")]
-    public interface _CustomTaskPane { }
-    [ComImport, TypeLibType(4288), Guid("000C033C-0000-0000-C000-000000000046")]
-    public interface _CustomTaskPaneEvents { }
-    [ComImport, TypeLibType(4304), Guid("000C1712-0000-0000-C000-000000000046")]
-    public interface IMsoChartTitle { }
-    public delegate void _CommandBarButtonEvents_ClickEventHandler(CommandBarControl Ctrl, ref bool CancelDefault);
-    public delegate void _CommandBarComboBoxEvents_ChangeEventHandler(CommandBarControl Ctrl);
-    public delegate void _CommandBarsEvents_OnUpdateEventHandler();
-    public delegate void _CustomTaskPaneEvents_VisibleStateChangeEventHandler(_CustomTaskPane CustomTaskPaneInst);
-    public delegate void _CustomTaskPaneEvents_DockPositionStateChangeEventHandler(_CustomTaskPane CustomTaskPaneInst);
-}
-'@
-            Add-Type -TypeDefinition $stubSource -OutputAssembly $coreDest -ErrorAction Stop
+            Write-Host "Generating Microsoft.Office.Core.dll stub..."
+            $b64 = "dXNpbmcgU3lzdGVtOw0KdXNpbmcgU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzOw0KdXNpbmcgU3lzdGVtLkNvbGxlY3Rpb25zOw0KDQpuYW1lc3BhY2UgTWljcm9zb2Z0Lk9mZmljZS5Db3JlIHsNCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0MzA0KSwgR3VpZCgiMDAwQzAzMDAtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBfQ29tbWFuZEJhcnMgOiBJRW51bWVyYWJsZSB7IFtEaXNwSWQoMCldIG9iamVjdCBnZXRfSXRlbShvYmplY3QgSW5kZXgpOyB9DQogICAgW0NvbUltcG9ydCwgR3VpZCgiMDAwQzAzMEUtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IiksIFR5cGVMaWJUeXBlKDQyODgpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0NvbW1hbmRCYXJzRXZlbnRzIHsgfQ0KICAgIFtDb21JbXBvcnQsIEd1aWQoIjU1Rjg4ODkwLTc3MDgtMTFEMS1BQ0VCLTAwNjAwODk2MURBNSIpLCBUeXBlTGliVHlwZSg0Mjg4KV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIENvbW1hbmRCYXJDb250cm9sIHsgfQ0KICAgIFtDb21JbXBvcnQsIEd1aWQoIjAwMEMwMzA3LTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpLCBUeXBlTGliVHlwZSg0MTYwKV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIF9Db21tYW5kQmFyQnV0dG9uIHsgfQ0KICAgIFtDb21JbXBvcnQsIEd1aWQoIjAwMEMwMzBDLTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpLCBUeXBlTGliVHlwZSg0MTYwKV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIF9Db21tYW5kQmFyQ29tYm9Cb3ggeyB9DQogICAgW0NvbUltcG9ydCwgR3VpZCgiMDAwQzAzNTItMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IiksIFR5cGVMaWJUeXBlKDQyODgpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0NvbW1hbmRCYXJCdXR0b25FdmVudHMgeyB9DQogICAgW0NvbUltcG9ydCwgR3VpZCgiMDAwQzAzNTQtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IiksIFR5cGVMaWJUeXBlKDQyODgpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0NvbW1hbmRCYXJDb21ib0JveEV2ZW50cyB7IH0NCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0MTYwKSwgR3VpZCgiMDAwQzAzOTUtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBJUmliYm9uRXh0ZW5zaWJpbGl0eSB7IH0NCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0MzA0KSwgR3VpZCgiMDAwQzAzQTYtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBJUmliYm9uVUkgeyB9DQogICAgW0NvbUltcG9ydCwgVHlwZUxpYlR5cGUoNDI4OCksIEd1aWQoIjAwMDJFMTgwLTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0lNc29EaXNwT2JqIHsgfQ0KICAgIFtDb21JbXBvcnQsIFR5cGVMaWJUeXBlKDQyODgpLCBHdWlkKCIwMDBDMDMxMC0wMDAwLTAwMDAtQzAwMC0wMDAwMDAwMDAwNDYiKV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIElBY2Nlc3NpYmxlIHsgfQ0KICAgIFtDb21JbXBvcnQsIFR5cGVMaWJUeXBlKDQwOTYpLCBHdWlkKCI2MTg3MzZFMC0zQzNELTExQ0YtODEwQy0wMEFBMDAzODlCNzEiKV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIF9JTXNvT2xlQWNjRGlzcE9iaiB7IH0NCiAgICBbQ29tSW1wb3J0LCBHdWlkKCIwMDA2NzIxNi0wMDAwLTAwMDAtQzAwMC0wMDAwMDAwMDAwNDYiKSwgVHlwZUxpYlR5cGUoNDI4OCldDQogICAgcHVibGljIGludGVyZmFjZSBJTXNvRW52ZWxvcGVWQiB7IH0NCiAgICBbQ29tSW1wb3J0LCBHdWlkKCIwMDA2NzIxNy0wMDAwLTAwMDAtQzAwMC0wMDAwMDAwMDAwNDYiKSwgVHlwZUxpYlR5cGUoNDI4OCldDQogICAgcHVibGljIGludGVyZmFjZSBJTXNvRW52ZWxvcGVWQkV2ZW50cyB7IH0NCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0MTYwKSwgR3VpZCgiMDAwQ0RDMDUtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBfQ3VzdG9tWE1MUGFydCB7IH0NCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0MTYwKSwgR3VpZCgiMDAwQ0RDMDYtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBfQ3VzdG9tWE1MUGFydHMgeyB9DQogICAgW0NvbUltcG9ydCwgVHlwZUxpYlR5cGUoNDI4OCksIEd1aWQoIjAwMENEQzE1LTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0N1c3RvbVhNTFNjaGVtYUNvbGxlY3Rpb24geyB9DQogICAgW0NvbUltcG9ydCwgVHlwZUxpYlR5cGUoNDI4OCksIEd1aWQoIjAwMENEQzBDLTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0N1c3RvbVhNTFBhcnRFdmVudHMgeyB9DQogICAgW0NvbUltcG9ydCwgVHlwZUxpYlR5cGUoNDI4OCksIEd1aWQoIjAwMENEQzBGLTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgX0N1c3RvbVhNTFBhcnRzRXZlbnRzIHsgfQ0KICAgIFtDb21JbXBvcnQsIFR5cGVMaWJUeXBlKDQxNjApLCBHdWlkKCIwMDBDMDMzQi0wMDAwLTAwMDAtQzAwMC0wMDAwMDAwMDAwNDYiKV0NCiAgICBwdWJsaWMgaW50ZXJmYWNlIF9DdXN0b21UYXNrUGFuZSB7IH0NCiAgICBbQ29tSW1wb3J0LCBUeXBlTGliVHlwZSg0Mjg4KSwgR3VpZCgiMDAwQzAzM0MtMDAwMC0wMDAwLUMwMDAtMDAwMDAwMDAwMDQ2IildDQogICAgcHVibGljIGludGVyZmFjZSBfQ3VzdG9tVGFza1BhbmVFdmVudHMgeyB9DQogICAgW0NvbUltcG9ydCwgVHlwZUxpYlR5cGUoNDMwNCksIEd1aWQoIjAwMEMxNzEyLTAwMDAtMDAwMC1DMDAwLTAwMDAwMDAwMDA0NiIpXQ0KICAgIHB1YmxpYyBpbnRlcmZhY2UgSU1zb0NoYXJ0VGl0bGUgeyB9DQogICAgcHVibGljIGRlbGVnYXRlIHZvaWQgX0NvbW1hbmRCYXJCdXR0b25FdmVudHNfQ2xpY2tFdmVudEhhbmRsZXIoQ29tbWFuZEJhckNvbnRyb2wgQ3RybCwgcmVmIGJvb2wgQ2FuY2VsRGVmYXVsdCk7DQogICAgcHVibGljIGRlbGVnYXRlIHZvaWQgX0NvbW1hbmRCYXJDb21ib0JveEV2ZW50c19DaGFuZ2VFdmVudEhhbmRsZXIoQ29tbWFuZEJhckNvbnRyb2wgQ3RybCk7DQogICAgcHVibGljIGRlbGVnYXRlIHZvaWQgX0NvbW1hbmRCYXJzRXZlbnRzX09uVXBkYXRlRXZlbnRIYW5kbGVyKCk7DQogICAgcHVibGljIGRlbGVnYXRlIHZvaWQgX0N1c3RvbVRhc2tQYW5lRXZlbnRzX1Zpc2libGVTdGF0ZUNoYW5nZUV2ZW50SGFuZGxlcihfQ3VzdG9tVGFza1BhbmUgQ3VzdG9tVGFza1BhbmVJbnN0KTsNCiAgICBwdWJsaWMgZGVsZWdhdGUgdm9pZCBfQ3VzdG9tVGFza1BhbmVFdmVudHNfRG9ja1Bvc2l0aW9uU3RhdGVDaGFuZ2VFdmVudEhhbmRsZXIoX0N1c3RvbVRhc2tQYW5lIEN1c3RvbVRhc2tQYW5lSW5zdCk7DQp9DQo="
+            $stubPath = "$env:RUNNER_TEMP\OfficeCoreStub.cs"
+            [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64)) | Set-Content $stubPath -Encoding UTF8
+            Write-Host "C# stub written to $stubPath ($((Get-Item $stubPath).Length) bytes)"
+            Add-Type -TypeDefinition (Get-Content $stubPath -Raw) -OutputAssembly $coreDest -ErrorAction Stop
             Write-Host "Stub generated: $((Get-Item $coreDest).Length) bytes"
           } else {
             Write-Host "Microsoft.Office.Core.dll OK"
