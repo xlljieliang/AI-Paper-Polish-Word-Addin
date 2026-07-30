@@ -161,13 +161,15 @@ jobs:
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           if (-not $vsPath) { throw "vswhere failed to detect VS installation path" }
           $vstoRefPath = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
-          $libPath = Join-Path $PWD.Path "lib"
-          $combinedRefPath = "$vstoRefPath;$libPath"
-          Write-Host "ReferencePath: $combinedRefPath"
+          # Note: lib\ is NOT added to ReferencePath because:
+          # 1. All lib DLLs already have HintPath in the csproj file
+          # 2. ForceVSTORefs target injects VSTO DLLs into @(ReferencePath) before CoreCompile
+          # 3. MSBuild's command-line parser splits on ';' inside /p: value (MSB1006)
+          Write-Host "ReferencePath: $vstoRefPath"
           Write-Host "--- lib contents ---"
           Get-ChildItem lib | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
           Write-Host "--- Starting MSBuild with detailed logging ---"
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$combinedRefPath" /p:UseSharedCompilation=false /v:d 2>&1 | Tee-Object -FilePath build.log
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /p:UseSharedCompilation=false /v:d 2>&1 | Tee-Object -FilePath build.log
           Write-Host "--- Build exit code: $LASTEXITCODE ---"
           if ($LASTEXITCODE -ne 0) {
             Write-Host "--- Last 100 lines of build log ---"
