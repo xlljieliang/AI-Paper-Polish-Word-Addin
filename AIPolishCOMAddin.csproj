@@ -40,6 +40,11 @@
     <AssemblyOriginatorKeyFile>AIPolishCOMAddin_TemporaryKey.pfx</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.Office.Core">
+      <HintPath>$(MSBuildProjectDirectory)\lib\Microsoft.Office.Core.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Microsoft.Office.Interop.Word">
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
