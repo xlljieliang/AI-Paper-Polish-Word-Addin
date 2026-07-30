@@ -118,7 +118,12 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Starting build..."
-          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false /v:m
+          # Resolve VS reference assemblies path for VSTO (workaround for MSBuild bug #7617:
+          # AssemblyFolders.config may be missing or not include VSTO paths on build server)
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $vstoRefPath = Join-Path $vsPath "Common7\IDE\ReferenceAssemblies\v4.0"
+          Write-Host "VSTO ReferencePath: $vstoRefPath"
+          msbuild AIPolishCOMAddin.csproj /restore /t:Build "/p:Configuration=Release" "/p:Platform=AnyCPU" /p:SignAssembly=false "/p:ReferencePath=$vstoRefPath" /v:m
           if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
           Write-Host "BUILD SUCCEEDED!"
 
