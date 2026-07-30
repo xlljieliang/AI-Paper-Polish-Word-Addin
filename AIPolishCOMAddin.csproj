@@ -119,8 +119,17 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" Condition="Exists('$(MSBuildToolsPath)\Microsoft.CSharp.targets')" />
   <!-- Load VSTO targets LAST (important: VSTO targets must come after CSharp targets to extend the build pipeline correctly) -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Office\Microsoft.VisualStudio.Tools.Office.targets" />
-  <!-- Ensure MSBuild searches lib\ for VSTO reference assemblies (after VSTO targets import, as they may modify search paths) -->
-  <PropertyGroup>
-    <ReferencePath>$(MSBuildProjectDirectory)\lib\;$(ReferencePath)</ReferencePath>
-  </PropertyGroup>
+  <!-- Force MSBuild to search lib\ for VSTO reference assemblies.
+       Runs right before ResolveAssemblyReferences so VSTO targets cannot override. -->
+  <Target Name="InjectVSTORefPath" BeforeTargets="ResolveAssemblyReferences">
+    <PropertyGroup>
+      <AssemblySearchPaths>$(AssemblySearchPaths);$(MSBuildProjectDirectory)\lib</AssemblySearchPaths>
+    </PropertyGroup>
+    <Message Importance="high" Text="[VSTO-FIX] AssemblySearchPaths = $(AssemblySearchPaths)" />
+    <Message Importance="high" Text="[VSTO-FIX] lib dir contents:" />
+    <ItemGroup>
+      <_LibFiles Include="$(MSBuildProjectDirectory)\lib\*.dll" />
+    </ItemGroup>
+    <Message Importance="high" Text="  %(_LibFiles.FullPath)" />
+  </Target>
 </Project>
