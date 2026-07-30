@@ -92,25 +92,57 @@ jobs:
             Write-Host "MSI extracted to $extractDir"
           }
 
+      - name: Diagnostic - find VSTO DLL locations
+        shell: pwsh
+        run: |
+          Write-Host "=== Searching for VSTO DLLs everywhere ==="
+          # 1) GAC_MSIL
+          Write-Host "--- GAC_MSIL dirs matching *Office.Tools* ---"
+          Get-ChildItem "C:\Windows\Microsoft.NET\assembly\GAC_MSIL" -Directory -Filter "Microsoft.Office.Tools*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+          # 2) Entire GAC tree
+          Write-Host "--- Searching entire GAC tree for VSTO DLLs ---"
+          Get-ChildItem "C:\Windows\Microsoft.NET\assembly" -Filter "Microsoft.Office.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+          Get-ChildItem "C:\Windows\Microsoft.NET\assembly" -Filter "Microsoft.VisualStudio.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+          # 3) Program Files VSTO
+          Write-Host "--- Program Files VSTO ---"
+          Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter "*VSTO*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+          Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio Tools for Office Runtime" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+          # 4) VS install dir
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "--- VS dir VSTO DLLs ---"
+          Get-ChildItem $vsPath -Filter "Microsoft.Office.Tools.*.dll" -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object { Write-Host $_.FullName }
+          Write-Host "=== Diagnostic complete ==="
+
       - name: Stage VSTO reference assemblies
         shell: pwsh
         run: |
           $refDir = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\VSTO40\v4.0"
           New-Item -ItemType Directory -Force -Path $refDir | Out-Null
           $needed = @("Microsoft.Office.Tools.Common.v4.0.Utilities", "Microsoft.Office.Tools.v4.0.Framework", "Microsoft.VisualStudio.Tools.Applications.Runtime")
+          # Search paths in priority order
+          $searchRoots = @(
+            "C:\Windows\Microsoft.NET\assembly",
+            "$env:RUNNER_TEMP\vsto_extract",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio Tools for Office Runtime",
+            "${env:ProgramFiles(x86)}"
+          )
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if ($vsPath) { $searchRoots += $vsPath }
           foreach ($asm in $needed) {
             $dest = Join-Path $refDir "$asm.dll"
             if (Test-Path $dest) { Write-Host "$asm OK"; continue }
             $found = $false
-            # 1) GAC (VSTO Runtime installs here)
-            $dlls = Get-ChildItem "C:\Windows\Microsoft.NET\assembly\GAC_MSIL" -Filter "$asm.dll" -Recurse -Depth 5 -ErrorAction SilentlyContinue
-            if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm from GAC"; $found = $true }
-            # 2) MSI extract fallback
-            if (-not $found) {
-              $dlls = Get-ChildItem "$env:RUNNER_TEMP\vsto_extract" -Filter "$asm.dll" -Recurse -ErrorAction SilentlyContinue
-              if ($dlls) { Copy-Item $dlls[0].FullName $dest -Force; Write-Host "$asm from MSI extract"; $found = $true }
+            foreach ($root in $searchRoots) {
+              if (-not (Test-Path $root)) { continue }
+              $dlls = Get-ChildItem $root -Filter "$asm.dll" -Recurse -Depth 8 -ErrorAction SilentlyContinue
+              if ($dlls) {
+                Copy-Item $dlls[0].FullName $dest -Force
+                Write-Host "$asm from $root -> $($dlls[0].FullName)"
+                $found = $true
+                break
+              }
             }
-            if (-not $found) { throw "FATAL: $asm.dll not found in GAC or MSI extract!" }
+            if (-not $found) { throw "FATAL: $asm.dll not found anywhere!" }
           }
           Write-Host "All VSTO reference assemblies staged successfully."
 
